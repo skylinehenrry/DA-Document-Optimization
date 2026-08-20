@@ -192,23 +192,42 @@ def object_to_json(object):
     # Converts a child class of Pydantic Basemodel to JSON format
     return json.dumps(object.model_dump(), indent = 2, ensure_ascii = False)
 
+
+def retrieve_attribute_from_workflow_graph(script: str, attribute: str, workflow_graph: WorkflowDependencyGraph):
+    """
+    Helper function to retrieve the specified attribute of the specified script from the workflow dependency graph
+    e.g. retrieve the <stage_order_ID> attribute of preprocessing.py from the workflow dependency graph
+    """
+    for node in workflow_graph.nodes:
+        if node.script_name == script:
+            if not hasattr(node, attribute):
+                raise AttributeError(f"WorkflowNode has no attribute: {attribute}")
+            return getattr(node, attribute, None)
+    return None
+
+
 async def generate_summary_for_file(file: Path,
                                     script_profile: ScriptDependencyProfile, 
                                     workflow_graph: WorkflowDependencyGraph,
                                     semaphore: asyncio.Semaphore,
-                                    summary_chain,
-                                    model: Literal["OpenAI", "Ollama"] = "OpenAI"):
+                                    summary_chain) -> ScriptSummary:
+    # Basic information of file, can be retrieved directly from path info
     script_name = file.name
     script_path = str(file)
     script_type = detect_script_type(file)
 
+    # AI-generated information of file, including it's stage ID (to reflect the processing stage the file handles), and order ID within each stage (e.g. B01)
+    script_stage_order_ID = retrieve_attribute_from_workflow_graph(file.name, "stage_order_ID", workflow_graph)
+    
     document = TextLoader(file_path = str(file), 
                           encoding = "utf-8", 
                           autodetect_encoding = True).load()[0]
 
+    # Async API call
     payload = {"script_name": script_name, 
                "script_path": script_path, 
                "script_type": script_type, 
+               "script_stage_order_ID": script_stage_order_ID,
                "script_content": document.page_content, 
                "script_dependency_profile": object_to_json(script_profile), 
                "workflow_dependency_graph": object_to_json(workflow_graph)}
@@ -216,15 +235,16 @@ async def generate_summary_for_file(file: Path,
     async with semaphore:
         return await summary_chain.ainvoke(payload)
 
+
 async def generate_summary_for_folder(valid_file_list: list[Path], 
                                       dependency_profiles: list[ScriptDependencyProfile],
                                       workflow_graph: WorkflowDependencyGraph,
                                       model: Literal["OpenAI", "Ollama"] = "OpenAI",
-                                      max_concurrent_files: int = 10):
+                                      max_concurrent_files: int = 10) -> list[ScriptSummary]:
     
     LLM = set_up_LLM(model = model)
     summary_prompt = ChatPromptTemplate.from_template(Path("./prompts/prompt_generate_script_summary.md").read_text(encoding = "utf-8"))
-    summary_chain = summary_prompt | LLM.with_structured_output(schema = ) # to be filled later
+    summary_chain = summary_prompt | LLM.with_structured_output(schema = ScriptSummary) # Script Summary class can be found in classes.py
 
     semaphore = asyncio.Semaphore(max_concurrent_files)
 
@@ -236,7 +256,6 @@ async def generate_summary_for_folder(valid_file_list: list[Path],
 
         if profile is None:
             pass # to be defined later
-        tasks.append(generate_summary_for_file(file, profile, workflow_graph, summary_chain, semaphore))
+        tasks.append(generate_summary_for_file(file, profile, workflow_graph, semaphore, summary_chain))
 
     return await asyncio.gather(*tasks)
-

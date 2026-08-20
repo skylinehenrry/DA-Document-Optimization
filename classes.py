@@ -64,6 +64,11 @@ class WorkflowNode(BaseModel):
     script_path: str
     script_type: str
     role: str | None = None
+    stage_ID: str | None = None
+    order_ID: str | None = None
+    stage_order_ID: str | None = None
+    order_confidence: Literal["high", "medium", "low"]
+    order_evidence: str | None = None
 
 
 class WorkflowEdge(BaseModel):
@@ -109,10 +114,8 @@ class ScriptSummary(BaseModel):
     script_type: Literal["python", "sql", "alteryx", "bat"]
     script_name: str
     script_location: str
+    script_stage_order_ID: str
     script_high_level_summary: str
     script_detailed_summary: str
     script_input_data: list[str] = Field(default_factory = list)
     script_output_data: list[str] = Field(default_factory = list)
-    script_role: str
-    script_order_ID: str
-

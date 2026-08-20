@@ -1,128 +1,46 @@
-# Script Interpretation Prompt
+# Script Summary Generation Prompt
 
-You are an expert data engineering and analytics assistant. Your task is to interpret a script and produce a structured summary that explains what the script does, what data it uses, what data it creates, and where it fits in a larger processing workflow.
+You are an expert data engineering and analytics assistant. You are analyzing one script from a larger processing workflow.
 
-## Objective
+Your task is to produce a structured `ScriptSummary` for the script.
 
-Analyze the provided script and return a clear, accurate interpretation of its purpose and behavior.
+Return the result using the provided structured output schema.
 
-The script may be one of the following:
+## Required Output Schema
 
-- Python script
-- SQL script
-- Alteryx workflow
-- Other data-processing script or workflow
-
-## Output Format
-
-Return your answer as a `ScriptSummary` object with the following fields:
+The output must conform to the current `ScriptSummary` structure:
 
 ```python
 ScriptSummary(
     script_type="",
     script_name="",
     script_location="",
+    script_stage_order_ID="",
     script_high_level_summary="",
     script_detailed_summary="",
     script_input_data=[],
-    script_output_data=[],
-    script_role="",
-    script_order_ID=""
+    script_output_data=[]
 )
 ```
 
-## Field Instructions
+## Values Already Supplied By The Program
 
-### `script_type`
+The following values are already retrieved by the program. Use them directly in the final output.
 
-Identify the type of script or workflow.
+Do not rename, reformat, reinterpret, or infer different values for these fields:
 
-Examples:
+- `script_type`
+- `script_name`
+- `script_location`
+- `script_stage_order_ID`
 
-- `Python`
-- `SQL`
-- `Alteryx`
-- `Unknown`
+Use exactly these values:
 
-### `script_name`
+Script type:
 
-Return the name of the script if available.
-
-If the script name is not provided, use `"Unknown"`.
-
-### `script_location`
-
-Return the file path or location if available.
-
-If no location is provided, use `"Unknown"`.
-
-### `script_high_level_summary`
-
-Provide a short summary of the script’s overall purpose.
-
-This should be understandable to someone who wants a quick overview of the script without reading the code.
-
-### `script_detailed_summary`
-
-Provide a more detailed explanation of the script.
-
-Include:
-
-- Main processing steps
-- Important functions, queries, joins, filters, or transformations
-- Key business or data logic
-- Any assumptions made by the script
-- Any dependencies on files, databases, APIs, or other scripts
-
-### `script_input_data`
-
-Return a list of input datasets, files, tables, APIs, or other sources used by the script.
-
-If no inputs are found, return an empty list.
-
-### `script_output_data`
-
-Return a list of datasets, files, tables, reports, or other outputs created or modified by the script.
-
-If no outputs are found, return an empty list.
-
-### `script_role`
-
-Explain the role this script plays in the overall workflow.
-
-Examples:
-
-- Ingests raw data
-- Cleans and transforms source data
-- Joins multiple datasets
-- Performs calculations or business logic
-- Produces reporting output
-- Exports final data
-- Supports another downstream process
-
-### `script_order_ID`
-
-Return a zero-padded string representing the likely execution order of the script.
-
-Examples:
-
-- `"001"`
-- `"002"`
-- `"003"`
-
-If the order cannot be determined, return `"Unknown"`.
-
-## Interpretation Rules
-
-- Do not invent details that are not supported by the script.
-- If something is unclear, state that it is unclear.
-- Prefer specific table, file, column, and function names when available.
-- Keep the summary concise but complete.
-- Focus on what the script does, not just what the code syntax says.
-- If the script contains comments, use them as helpful context, but verify them against the actual code.
-- If the script appears incomplete or contains errors, mention this in the detailed summary.
-
-## Script Metadata
+```text
+{script_type}
+```
 
 Script name:
 
@@ -133,8 +51,95 @@ Script name:
 Script location:
 
 ```text
-{script_location}
+{script_path}
 ```
+
+Script stage/order ID:
+
+```text
+{script_stage_order_ID}
+```
+
+## Dependency Evidence
+
+You are also given the script's dependency profile. Use this as the preferred source of truth for:
+
+- `script_input_data`
+- `script_output_data`
+- dependency-related details in `script_detailed_summary`
+
+For `script_input_data`, include resources from dependency entries where `relationship` is `reads`.
+
+For `script_output_data`, include resources from dependency entries where `relationship` is `writes`.
+
+Use the dependency target's `name` when available. If a target has a useful `path`, preserve that path where helpful.
+
+Script dependency profile:
+
+```json
+{script_dependency_profile}
+```
+
+## Workflow Context
+
+You are also given the workflow dependency graph. Use this only as context for understanding where this script sits in the overall workflow.
+
+Use it to improve the summary, especially when describing whether the script appears to be ingestion, pre-processing, transformation, loading, reporting, orchestration, or utility work.
+
+Do not override `script_stage_order_ID`; that value was already retrieved from the workflow graph by the program.
+
+Workflow dependency graph:
+
+```json
+{workflow_dependency_graph}
+```
+
+## Summary Field Instructions
+
+### `script_high_level_summary`
+
+Write a short, business-readable summary of the script's overall purpose.
+
+Keep it concise. It should be understandable to someone who wants a quick overview without reading the code.
+
+### `script_detailed_summary`
+
+Write a more detailed explanation of what the script does.
+
+Include:
+
+- Main processing steps
+- Important functions, queries, joins, filters, transformations, commands, or workflow tools
+- How the script uses its inputs
+- What outputs it creates or modifies
+- Any important dependency on other scripts, custom modules, tables, files, APIs, or workflow tools
+- Any uncertainty or limitation visible in the script
+
+### `script_input_data`
+
+Return a list of input datasets, files, tables, APIs, databases, or other resources used by the script.
+
+Prefer the `reads` dependencies from the script dependency profile.
+
+If no input data is found, return an empty list.
+
+### `script_output_data`
+
+Return a list of output datasets, files, tables, reports, APIs, databases, or other resources created or modified by the script.
+
+Prefer the `writes` dependencies from the script dependency profile.
+
+If no output data is found, return an empty list.
+
+## Interpretation Rules
+
+- Do not invent details that are not supported by the script content, dependency profile, or workflow graph.
+- Prefer the dependency profile for input/output data over re-inferring input/output data from raw code.
+- Use the raw script content for explaining processing logic.
+- If something is unclear, state that it is unclear in the detailed summary.
+- Preserve specific table names, file paths, column names, function names, command names, and workflow tool names when available.
+- Keep the output concise but complete.
+- Return only the structured output requested by the schema.
 
 ## Script Content
 
