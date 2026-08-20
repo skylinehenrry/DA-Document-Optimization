@@ -12,8 +12,10 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 
+
 from pathlib import Path
 from typing import Literal
+from pydantic import BaseModel
 
 
 #%%
@@ -64,7 +66,14 @@ These information will be provided for second step analysis, in which Gen AI rea
 """
 
 import asyncio
-from dataclasses_module import ScriptDependencyProfile, DependencyRef, ResourceRef
+from classes import ScriptDependencyProfile, DependencyRef, ResourceRef, ScriptSummary
+
+def set_up_LLM(model = Literal["OpenAI", "Ollama"]):
+    if model == "OpenAI":
+        return ChatOpenAI(temperature = 0)
+    elif model == "Ollama":
+        return ChatOllama(temperature = 0)
+    
 
 def detect_script_type(file_path: Path):
     if file_path.suffix == ".py":
@@ -79,7 +88,7 @@ def detect_script_type(file_path: Path):
         return "unknown"
 
 
-def create_dependency_chains(LLM: ChatOpenAI | ChatOllama):
+def create_dependency_chains(model: Literal["OpenAI", "Ollama"]):
     """
     Use LLM to extract the following information
         1. The list of imported modules (only include custom modules, and exclude built-in modules and packages installed from pip)
@@ -87,6 +96,8 @@ def create_dependency_chains(LLM: ChatOpenAI | ChatOllama):
         3. The list of output data (e.g. csv files, tsv files, excel files or tables)
     The output will be a DependencyExtraction object, defined in dataclasses_module
     """
+
+    LLM = set_up_LLM(model = model)
 
     import_prompt = ChatPromptTemplate.from_template(Path("./prompts/prompt_detect_import.md").read_text(encoding = "utf-8"))
     input_data_prompt = ChatPromptTemplate.from_template(Path("./prompts/prompt_detect_input_data.md").read_text(encoding = "utf-8"))
@@ -150,11 +161,12 @@ async def extract_dependencies_for_folder(valid_file_list: list[Path],
 #%%
 """
 Tools for letting AI reason dependency graph and generate summaries on each script
-This will be used to generate the flow chart used in DA Document
+These tools will be used to generate the flow chart used in DA Document
 """
 
+import asyncio
 import json
-from dataclasses_module import WorkflowNode, WorkflowEdge, WorkflowDependencyGraph
+from classes import ScriptDependencyProfile, WorkflowDependencyGraph
 
 def profiles_to_json(profiles: list[ScriptDependencyProfile]) -> str:
     return json.dumps([profile.model_dump() for profile in profiles], indent = 2, ensure_ascii = False)
@@ -162,13 +174,69 @@ def profiles_to_json(profiles: list[ScriptDependencyProfile]) -> str:
 
 def construct_dependency_network(profiles: list[ScriptDependencyProfile], 
                                  model: Literal["OpenAI", "Ollama"] = "OpenAI") -> WorkflowDependencyGraph:
-    if model == "OpenAI":
-        LLM = ChatOpenAI(temperature = 0) # model to be supplied later
-    elif model == "Ollama":
-        LLM = ChatOllama(temperature = 0)
+    LLM = set_up_LLM(model = model)
     
     workflow_prompt = ChatPromptTemplate.from_template(Path("./prompts/prompt_construct_dependency_network.md").read_text(encoding = "utf-8"))
     workflow_chain = workflow_prompt | LLM.with_structured_output(schema = WorkflowDependencyGraph)
     workflow_graph = workflow_chain.invoke({"script_dependency_profiles": profiles})
     
     return workflow_graph
+
+
+#%%
+"""
+Tools for building script summaries
+"""
+
+def object_to_json(object):
+    # Converts a child class of Pydantic Basemodel to JSON format
+    return json.dumps(object.model_dump(), indent = 2, ensure_ascii = False)
+
+async def generate_summary_for_file(file: Path,
+                                    script_profile: ScriptDependencyProfile, 
+                                    workflow_graph: WorkflowDependencyGraph,
+                                    semaphore: asyncio.Semaphore,
+                                    summary_chain,
+                                    model: Literal["OpenAI", "Ollama"] = "OpenAI"):
+    script_name = file.name
+    script_path = str(file)
+    script_type = detect_script_type(file)
+
+    document = TextLoader(file_path = str(file), 
+                          encoding = "utf-8", 
+                          autodetect_encoding = True).load()[0]
+
+    payload = {"script_name": script_name, 
+               "script_path": script_path, 
+               "script_type": script_type, 
+               "script_content": document.page_content, 
+               "script_dependency_profile": object_to_json(script_profile), 
+               "workflow_dependency_graph": object_to_json(workflow_graph)}
+
+    async with semaphore:
+        return await summary_chain.ainvoke(payload)
+
+async def generate_summary_for_folder(valid_file_list: list[Path], 
+                                      dependency_profiles: list[ScriptDependencyProfile],
+                                      workflow_graph: WorkflowDependencyGraph,
+                                      model: Literal["OpenAI", "Ollama"] = "OpenAI",
+                                      max_concurrent_files: int = 10):
+    
+    LLM = set_up_LLM(model = model)
+    summary_prompt = ChatPromptTemplate.from_template(Path("./prompts/prompt_generate_script_summary.md").read_text(encoding = "utf-8"))
+    summary_chain = summary_prompt | LLM.with_structured_output(schema = ) # to be filled later
+
+    semaphore = asyncio.Semaphore(max_concurrent_files)
+
+    profile_by_path = {profile.file_path: profile for profile in dependency_profiles}
+    tasks = []
+
+    for file in valid_file_list:
+        profile = profile_by_path.get(str(file))
+
+        if profile is None:
+            pass # to be defined later
+        tasks.append(generate_summary_for_file(file, profile, workflow_graph, summary_chain, semaphore))
+
+    return await asyncio.gather(*tasks)
+

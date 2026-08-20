@@ -9,7 +9,6 @@ sys.path.insert(0, script_directory)
 from pydantic import BaseModel, Field
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from dataclasses import dataclass, field
 from typing import Literal, Any
 from pathlib import Path
 
@@ -106,9 +105,8 @@ ScriptSummary
     script_order_ID: str # zero padded string representation of the order in which the script shoudl be executed (i.e. if it's the first script - the script that ingests the raw data, then it should be 01)
 """
 
-@dataclass
 class ScriptSummary(BaseModel):
-    script_type: Literal["Python", "SQL", "Alteryx", "BAT"]
+    script_type: Literal["python", "sql", "alteryx", "bat"]
     script_name: str
     script_location: str
     script_high_level_summary: str
