@@ -333,15 +333,10 @@ def convert_object_to_json(object: list[ScriptDependencyProfile] | WorkflowDepen
 
 def make_safe_id(value: str) -> str:
     """
-    Convert a display value into a compact identifier for HTML/spec usage.
-
-    The flowchart has two different needs: a readable label for people and a
-    stable id for code. Labels may contain spaces, slashes, punctuation, or
-    other characters that are awkward to use as object ids. This helper creates
-    a simple lowercase ASCII id by replacing non-alphanumeric runs with
-    underscores. It is mainly used for generated data nodes, where the original
-    resource name may come from an LLM extraction. The original name is still
-    preserved on the node label, so this function only affects internal ids.
+    Helper for building internal flowchart IDs.
+    - Converts display text into a lowercase identifier
+    - Replaces spaces / punctuation with underscores
+    - Keeps the readable name separately on the node label
     """
     value = value.lower()
     value = re.sub(r"[^a-z0-9]+", "_", value)
@@ -351,25 +346,21 @@ def make_safe_id(value: str) -> str:
 
 def make_data_node_id(resource_type: str, resource_name: str) -> str:
     """
-    Build a namespaced id for a data resource node.
-
-    Data nodes are created from dependency extraction results rather than from
-    the workflow graph itself. Prefixing them with ``data_`` keeps them separate
-    from script ids and reduces the chance of accidentally colliding with a
-    script named the same thing as an input or output file.
+    Helper for building IDs for data resource nodes.
+    - Prefixes the ID with data_
+    - Includes resource type and resource name
+    - Keeps data node IDs separate from script node IDs
     """
     return f"data_{make_safe_id(resource_type)}_{make_safe_id(resource_name)}"
 
 
 def script_type_to_node_kind(script_type: str) -> FlowchartNodeKind:
     """
-    Map a script type from the dependency graph to a visual node kind.
-
-    The workflow graph stores script types in simple business terms such as
-    ``python`` or ``sql``. The flowchart renderer uses more specific visual
-    kinds such as ``python_script`` so it can assign consistent colors, labels,
-    and icon text. Unknown script types are intentionally allowed and rendered
-    with the fallback style instead of breaking the chart.
+    Helper for mapping script type to visual node type.
+    - python -> python_script
+    - sql -> sql_script
+    - alteryx -> alteryx_workflow
+    - unknown values use the fallback node style
     """
     mapping: dict[str, FlowchartNodeKind] = {
         "python": "python_script",
@@ -383,13 +374,11 @@ def script_type_to_node_kind(script_type: str) -> FlowchartNodeKind:
 
 def resource_type_to_node_kind(resource_type: str) -> FlowchartNodeKind:
     """
-    Map an extracted resource type to a visual node kind.
-
-    Input and output resources can be files, tables, databases, APIs, or
-    unknown resources. This helper translates the extracted resource type into
-    the controlled vocabulary used by ``FlowchartNode.kind``. Keeping the
-    mapping here means the rest of the renderer can work from one standard set
-    of node kinds.
+    Helper for mapping data resource type to visual node type.
+    - file -> file node
+    - table -> table node
+    - database -> database node
+    - unknown values use the fallback node style
     """
     mapping: dict[str, FlowchartNodeKind] = {
         "file": "file",
@@ -407,21 +396,22 @@ def construct_flowchart_spec(
     profiles: list[ScriptDependencyProfile],
 ) -> FlowchartSpec:
     """
-    Combine script workflow reasoning and file-level dependency profiles.
+    Tool for building FlowchartSpec based on the following objects:
+    - WorkflowDependencyGraph # script nodes and script-to-script relationships
+    - ScriptDependencyProfile # input data, output data, and dependency refs
 
-    This function converts the analysis objects into one renderer-friendly
-    ``FlowchartSpec``. The workflow graph contributes script nodes and
-    script-to-script relationships. The dependency profiles contribute input and
-    output data nodes, plus read/write edges between those data resources and
-    the scripts that use them. The output is intentionally a separate object
-    from the final HTML, because it can be reviewed, edited, exported, or
-    re-rendered with a different visual style later.
+    For each script in the workflow graph:
+    - Create one script node
+    - Preserve script type, role, stage ID, and order ID
+    - Add script-to-script dependency edges
 
-    The function also deduplicates nodes and edges as it builds the spec. That
-    matters because several scripts may reference the same file, and repeated
-    extraction results should not produce repeated cards in the chart. The
-    resulting object is the clean handoff point between AI-assisted reasoning
-    and deterministic visual rendering.
+    For each dependency profile:
+    - Create data nodes for files / tables / databases used by scripts
+    - Add read edges from data nodes to scripts
+    - Add write edges from scripts to data nodes
+
+    Return a FlowchartSpec object that can be reviewed, edited, and passed to
+    render_flowchart_html for standardized HTML output.
     """
     spec = FlowchartSpec(
         title="Workflow Flowchart",
@@ -545,29 +535,22 @@ def construct_flowchart_spec(
 
 def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path) -> None:
     """
-    Render a FlowchartSpec as a standalone HTML file.
+    Tool for building HTML flowchart output based on FlowchartSpec.
 
-    This is the final deterministic rendering step in the workflow.
-    It takes the already-structured ``FlowchartSpec`` and writes one complete
-    HTML document that can be opened directly in a browser.
-    The LLM should ideally decide what the nodes and edges mean before this
-    function runs; this function decides how that information is displayed.
+    The FlowchartSpec should already contain:
+    - nodes # scripts, files, tables, databases, etc.
+    - edges # read, write, code dependency, execution dependency, etc.
+    - title / summary # text to show at the top of the HTML report
 
-    The renderer keeps the visual style standardized across projects.
-    It defines the page shell, color palette, legend, canvas, script cards,
-    data cards, SVG arrows, and hover behavior for relationship labels.
-    Because the HTML is generated from a schema, the output can be reproduced
-    consistently after a human edits ``flowchart_spec.json``.
+    This function is responsible for:
+    - calculating node positions
+    - creating the HTML page shell
+    - defining CSS styles for cards, icons, colors, and fonts
+    - drawing orthogonal SVG arrows between nodes
+    - showing relationship labels when the user hovers over an edge
 
-    The layout is intentionally simple and predictable.
-    Nodes are placed into left-to-right layers based on graph dependencies.
-    The canvas then grows horizontally and vertically to fit those nodes.
-    Edges are rendered as orthogonal SVG paths so arrows turn at right angles.
-    Relationship labels are hidden until hover to avoid clutter in dense charts.
-
-    In practice, this function is the main place to tune the look and feel.
-    Change colors, fonts, node dimensions, legend styling, or hover effects
-    here when you want a different department-wide visual standard.
+    The output is a standalone HTML file. This keeps visual generation
+    deterministic and consistent across projects.
     """
     if isinstance(output_path, str):
         output_path = Path(output_path)
@@ -881,29 +864,19 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
 def calculate_flowchart_positions(flowchart_spec: FlowchartSpec,
                                   canvas_width: int = 1500) -> dict[str, dict[str, int]]:
     """
-    Calculate absolute pixel positions for every node in the flowchart.
+    Tool for calculating node positions for HTML flowchart output.
 
-    This function is the small layout engine behind the HTML chart.
-    It first asks ``calculate_flowchart_layers`` which horizontal layer each
-    node belongs to, then stacks nodes vertically within each layer.
-    Layering gives the chart its left-to-right workflow direction.
-    Row stacking keeps nodes in the same stage from overlapping.
+    For each FlowchartNode in FlowchartSpec:
+    - Retrieve the dependency layer
+    - Assign an x coordinate based on the layer
+    - Assign a y coordinate based on the row inside the layer
+    - Return positions as {node_id: {"x": ..., "y": ...}}
 
-    The returned dictionary maps each node id to an ``x`` and ``y`` coordinate.
-    Those coordinates are later used by both ``build_flowchart_node_html`` and
-    ``build_flowchart_edge_svg``. This shared coordinate system is important:
-    if cards and arrows use different positioning logic, arrows drift away from
-    their intended start and end points.
-
-    The horizontal spacing is dynamic. The function uses the requested canvas
-    width, left/right margins, and number of layers to decide how far apart
-    columns should be. It still enforces a minimum spacing so dense charts do
-    not collapse into each other. Within each layer, nodes are sorted by stage
-    order, kind, and label to make the visual output stable across runs.
-
-    If the chart ever looks too compressed or too spread out, this is the first
-    function to inspect. The main tuning values are margins, node width, minimum
-    layer spacing, top offset, and row spacing.
+    This function controls the chart's spacing:
+    - left / right margin
+    - minimum layer gap
+    - vertical row gap
+    - stable sorting within each layer
     """
     layer_by_node = calculate_flowchart_layers(flowchart_spec)
     nodes_by_layer: dict[int, list[FlowchartNode]] = {}
@@ -939,29 +912,19 @@ def calculate_flowchart_positions(flowchart_spec: FlowchartSpec,
 
 def calculate_flowchart_layers(flowchart_spec: FlowchartSpec) -> dict[str, int]:
     """
-    Assign each flowchart node to a left-to-right dependency layer.
+    Tool for assigning each flowchart node to a workflow layer.
 
-    The goal of this function is to create a readable workflow direction.
-    Nodes with no incoming edges are placed at the beginning of the chart.
-    Their downstream targets are placed one layer to the right, and so on.
-    This makes inputs and earlier scripts appear toward the left, while
-    outputs and later scripts move toward the right.
+    For each edge in FlowchartSpec:
+    - Count incoming relationships
+    - Build a source-to-target adjacency map
+    - Start from nodes with no incoming dependencies
+    - Push downstream nodes to later layers
 
-    The implementation uses a simple topological-style pass.
-    It counts incoming edges for each node, starts with nodes that have no
-    incoming edges, and repeatedly pushes target nodes to later layers.
-    If a node can be reached through multiple paths, it keeps the furthest
-    layer required by those paths. That helps avoid placing a downstream node
-    too early when it depends on several upstream resources.
+    The output is a mapping:
+    - node ID -> layer number
 
-    Graphs produced by LLM reasoning can sometimes have cycles or ambiguous
-    relationships. Rather than failing, this function gives any unresolved node
-    a fallback layer of zero. That keeps the renderer robust while still making
-    imperfect workflow reasoning visible for human review.
-
-    This function does not decide exact pixel positions. It only decides the
-    conceptual column for each node. ``calculate_flowchart_positions`` converts
-    those columns into actual screen coordinates.
+    This function decides the conceptual left-to-right order.
+    calculate_flowchart_positions then converts the layer number into pixels.
     """
     node_ids = {node.id for node in flowchart_spec.nodes}
     incoming_count = {node_id: 0 for node_id in node_ids}
@@ -997,26 +960,16 @@ def calculate_flowchart_layers(flowchart_spec: FlowchartSpec) -> dict[str, int]:
 
 def build_flowchart_node_html(node: FlowchartNode, position: dict[str, int]) -> str:
     """
-    Render one flowchart node card as positioned HTML.
+    Tool for building one HTML card for one FlowchartNode.
 
-    Each node in the ``FlowchartSpec`` becomes one card on the canvas.
-    The card displays a compact icon, a kind label, the main node label, an
-    optional subtitle, and an optional stage/order badge. The ``position``
-    argument supplies the exact top-left pixel coordinate calculated by the
-    layout function.
+    For each node passed in:
+    - Create the outer card container
+    - Add the icon text based on node kind
+    - Add the node type, label, subtitle, and stage ID
+    - Position the card using the x / y coordinate
 
-    This function deliberately emits normal HTML instead of SVG for cards.
-    HTML text wrapping is easier to control for long file names, paths, and
-    script names. It also lets the browser handle accessible text selection and
-    layout details more naturally. The SVG layer is reserved for arrows.
-
-    The node kind is converted into a CSS class such as ``kind-python_script``
-    or ``kind-file``. The stylesheet then applies the correct color stripe and
-    icon background. This keeps the schema clean: the data says what type of
-    node it is, while CSS decides how that type should look.
-
-    If you want to change the card appearance, this function controls the HTML
-    structure, while ``render_flowchart_html`` controls the surrounding CSS.
+    The HTML card is used for scripts and data resources.
+    The CSS class controls the color and visual style.
     """
     kind_class = f"kind-{node.kind}"
     icon = node_kind_to_icon_text(node.kind)
@@ -1038,30 +991,19 @@ def build_flowchart_edge_svg(edge: FlowchartEdge,
                              positions: dict[str, dict[str, int]],
                              node_lookup: dict[str, FlowchartNode]) -> str:
     """
-    Render one relationship edge as an SVG group.
+    Tool for building one SVG arrow for one FlowchartEdge.
 
-    This function draws the arrow connecting a source node to a target node.
-    It uses the same pixel positions as the node cards, then calculates anchor
-    points on the right side of the source card and the left side of the target
-    card. For normal left-to-right relationships, it draws an orthogonal path:
-    horizontal out of the source, vertical if needed, then horizontal into the
-    target. For backward or same-layer relationships, it routes from the bottom
-    of the source toward the top of the target.
+    For each edge passed in:
+    - Find source and target node positions
+    - Draw an orthogonal arrow path
+    - Add a transparent hover path for easier mouse interaction
+    - Add a relationship label that appears on hover
 
-    The edge is returned as an SVG ``g`` group containing three pieces.
-    The visible path is the actual arrow.
-    The transparent ``edge-hit`` path creates a wider hover target so the user
-    does not need to place the mouse exactly on a thin line.
-    The text element contains the relationship label, hidden until hover.
-
-    Keeping labels hidden by default avoids clutter when many edges merge.
-    On hover, CSS reveals the label and emphasizes the arrow, making it clear
-    which dependency is being inspected. The label text is display-formatted by
-    ``format_edge_label`` so internal values like ``code_dependency`` become
-    human-friendly labels such as ``Code Dependency``.
-
-    This function is the main place to tune arrow geometry, routing style,
-    hover label position, and low-confidence edge styling.
+    This function controls:
+    - arrow routing
+    - arrow hover behavior
+    - relationship label position
+    - low-confidence edge styling
     """
     source = positions[edge.source]
     target = positions[edge.target]
@@ -1104,25 +1046,21 @@ def build_flowchart_edge_svg(edge: FlowchartEdge,
 
 def format_edge_label(value: str) -> str:
     """
-    Convert schema-style relationship names into display labels.
-
-    The flowchart data stores relationship kinds in machine-friendly values
-    such as ``code_dependency``. The chart should show human-friendly labels
-    such as ``Code Dependency``. This helper keeps that transformation in one
-    place so the underlying schema remains stable while the visual text can be
-    polished for readers.
+    Helper for formatting relationship labels for display.
+    - code_dependency -> Code Dependency
+    - reads -> Reads
+    - writes -> Writes
     """
     return value.replace("_", " ").title()
 
 
 def node_kind_to_icon_text(kind: FlowchartNodeKind) -> str:
     """
-    Return the short text shown inside a node icon.
-
-    The current renderer uses compact text badges instead of image icons.
-    This helper keeps that mapping centralized: Python scripts show ``PY``,
-    SQL scripts show ``SQL``, files show ``FILE``, and so on. The result is
-    deliberately short because it has to fit inside a small square icon.
+    Helper for selecting the short text shown inside each node icon.
+    - python_script -> PY
+    - sql_script -> SQL
+    - file -> FILE
+    - database -> DB
     """
     mapping = {
         "file": "FILE",
@@ -1140,11 +1078,9 @@ def node_kind_to_icon_text(kind: FlowchartNodeKind) -> str:
 
 def escape_html(value: object) -> str:
     """
-    Escape a value before inserting it into generated HTML.
-
-    Script names, file paths, and LLM-extracted labels may contain characters
-    that have special meaning in HTML. Escaping them prevents accidental markup
-    breakage and makes the renderer safer when displaying arbitrary project
-    content.
+    Helper for safely inserting values into generated HTML.
+    - Converts the input value to string
+    - Escapes HTML-sensitive characters
+    - Prevents script names / paths from breaking the HTML output
     """
     return html.escape(str(value), quote = True)
