@@ -499,12 +499,15 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
 
     output_path.parent.mkdir(exist_ok = True)
 
-    positions = calculate_flowchart_positions(flowchart_spec)
+    layer_by_node = calculate_flowchart_layers(flowchart_spec)
+    layer_count = max(layer_by_node.values(), default = 0) + 1
+    canvas_width = max(1500, layer_count * 520 + 160)
+    positions = calculate_flowchart_positions(flowchart_spec, canvas_width = canvas_width)
     node_lookup = {node.id: node for node in flowchart_spec.nodes}
 
     max_x = max((position["x"] for position in positions.values()), default = 0)
     max_y = max((position["y"] for position in positions.values()), default = 0)
-    canvas_width = max(1500, max_x + 360)
+    canvas_width = max(canvas_width, max_x + 360)
     canvas_height = max(720, max_y + 180)
 
     node_html = "\n".join(
@@ -552,7 +555,8 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
     body {{
       margin: 0;
       min-height: 100vh;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Cambria Math", Cambria, Georgia, serif;
+      font-weight: 700;
       color: var(--ink);
       background:
         linear-gradient(180deg, rgba(255,255,255,0.92), rgba(246,248,251,0.96)),
@@ -580,6 +584,7 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
       max-width: 980px;
       color: var(--muted);
       font-size: 13px;
+      font-weight: 700;
       line-height: 1.45;
     }}
 
@@ -600,6 +605,7 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
       background: var(--surface);
       color: #475467;
       font-size: 12px;
+      font-weight: 700;
     }}
 
     .swatch {{
@@ -630,7 +636,7 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
       width: {canvas_width}px;
       height: {canvas_height}px;
       z-index: 1;
-      pointer-events: none;
+      pointer-events: auto;
       overflow: visible;
     }}
 
@@ -702,6 +708,7 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
       margin-top: 6px;
       color: var(--muted);
       font-size: 11px;
+      font-weight: 700;
       line-height: 1.35;
       overflow-wrap: anywhere;
     }}
@@ -717,25 +724,45 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
       font-weight: 700;
     }}
 
-    .edge-label {{
-      font: 11px Inter, ui-sans-serif, system-ui, sans-serif;
-      fill: #475467;
-      paint-order: stroke;
-      stroke: #fff;
-      stroke-width: 4px;
-      stroke-linejoin: round;
-    }}
-
     .edge-path {{
       fill: none;
       stroke: var(--line);
       stroke-width: 2.2;
       marker-end: url(#arrow);
+      pointer-events: none;
     }}
 
     .edge-low {{
       stroke-dasharray: 6 5;
       stroke-width: 1.8;
+    }}
+
+    .edge-hit {{
+      fill: none;
+      stroke: transparent;
+      stroke-width: 18;
+      pointer-events: stroke;
+    }}
+
+    .edge-tooltip-text {{
+      opacity: 0;
+      transition: opacity 120ms ease;
+      pointer-events: none;
+    }}
+
+    .edge:hover .edge-tooltip-text {{
+      opacity: 1;
+    }}
+
+    .edge:hover .edge-path {{
+      stroke: #344054;
+      stroke-width: 2.8;
+    }}
+
+    .edge-tooltip-text {{
+      font: 14px "Cambria Math", Cambria, Georgia, serif;
+      font-weight: 800;
+      fill: #344054;
     }}
   </style>
 </head>
@@ -773,7 +800,8 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
     output_path.write_text(html_output, encoding = "utf-8")
 
 
-def calculate_flowchart_positions(flowchart_spec: FlowchartSpec) -> dict[str, dict[str, int]]:
+def calculate_flowchart_positions(flowchart_spec: FlowchartSpec,
+                                  canvas_width: int = 1500) -> dict[str, dict[str, int]]:
     layer_by_node = calculate_flowchart_layers(flowchart_spec)
     nodes_by_layer: dict[int, list[FlowchartNode]] = {}
 
@@ -782,12 +810,22 @@ def calculate_flowchart_positions(flowchart_spec: FlowchartSpec) -> dict[str, di
         nodes_by_layer.setdefault(layer, []).append(node)
 
     positions: dict[str, dict[str, int]] = {}
+    layer_count = max(nodes_by_layer.keys(), default = 0) + 1
+    left_margin = 48
+    right_margin = 48
+    node_width = 230
+
+    if layer_count <= 1:
+        layer_spacing = 0
+    else:
+        usable_width = max(canvas_width - left_margin - right_margin - node_width, 360)
+        layer_spacing = max(360, usable_width // (layer_count - 1))
 
     for layer, nodes in nodes_by_layer.items():
         nodes.sort(key = lambda node: (node.stage_order_ID or "", node.kind, node.label))
         for row, node in enumerate(nodes):
             positions[node.id] = {
-                "x": 48 + layer * 360,
+                "x": left_margin + layer * layer_spacing,
                 "y": 70 + row * 138
             }
 
@@ -860,18 +898,30 @@ def build_flowchart_edge_svg(edge: FlowchartEdge,
         mid_y = source_y + max(36, (target_y - source_y) // 2)
         path = f"M{source_x} {source_y} L{source_x} {mid_y} L{target_x} {mid_y} L{target_x} {target_y}"
         label_x = int((source_x + target_x) / 2)
-        label_y = int(mid_y) - 8
+        label_y = int(mid_y) - 12
     else:
         mid_x = int((source_x + target_x) / 2)
         path = f"M{source_x} {source_y} L{mid_x} {source_y} L{mid_x} {target_y} L{target_x} {target_y}"
-        label_x = mid_x
-        label_y = int((source_y + target_y) / 2) - 8
 
-    label = escape_html(edge.label or edge.kind)
+        if abs(source_y - target_y) > 24:
+            label_x = int((source_x + mid_x) / 2)
+            label_y = int(source_y) - 12
+        else:
+            label_x = int((source_x + target_x) / 2)
+            label_y = int(source_y) - 12
+
+    label = escape_html(format_edge_label(edge.label or edge.kind))
     edge_class = "edge-path edge-low" if edge.confidence == "low" else "edge-path"
 
-    return f"""        <path class="{edge_class}" d="{path}"></path>
-        <text class="edge-label" x="{label_x}" y="{label_y}" text-anchor="middle">{label}</text>"""
+    return f"""        <g class="edge">
+          <path class="{edge_class}" d="{path}"></path>
+          <path class="edge-hit" d="{path}"></path>
+          <text class="edge-tooltip-text" x="{label_x}" y="{label_y}" text-anchor="middle">{label}</text>
+        </g>"""
+
+
+def format_edge_label(value: str) -> str:
+    return value.replace("_", " ").title()
 
 
 def node_kind_to_icon_text(kind: FlowchartNodeKind) -> str:
