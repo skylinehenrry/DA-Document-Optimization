@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    :root {
+      --bg: #f3f7fc;
+      --surface: #ffffff;
+      --ink: #0c233c;
+      --muted: #4f647a;
+      --border: #c7d8ea;
+      --line: #6d86a3;
+      --file: #00c0ae;
+      --table: #7213ea;
+      --database: #098e7e;
+      --api: #00b8f5;
+      --python: #00338d;
+      --sql: #510dbc;
+      --alteryx: #005eb8;
+      --bat: #333333;
+      --unknown: #666666;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Cambria Math", Cambria, Georgia, serif;
+      font-weight: 700;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.94), rgba(243,247,252,0.98)),
+        var(--bg);
+    }
+
+    header {
+      padding: 24px 32px 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.94);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .summary {
+      margin-top: 7px;
+      max-width: 980px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 15px;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 9px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: #475467;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .swatch {
+      width: 11px;
+      height: 11px;
+      border-radius: 3px;
+      display: inline-block;
+    }
+
+    main {
+      padding: 28px;
+      overflow: auto;
+    }
+
+    .canvas {
+      position: relative;
+      width: {{ canvas_width }}px;
+      height: {{ canvas_height }}px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 16px 38px rgba(0,51,141,0.10);
+    }
+
+    svg.edges {
+      position: absolute;
+      inset: 0;
+      width: {{ canvas_width }}px;
+      height: {{ canvas_height }}px;
+      z-index: 1;
+      pointer-events: auto;
+      overflow: visible;
+    }
+
+    .node {
+      position: absolute;
+      z-index: 3;
+      width: 230px;
+      min-height: 92px;
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 11px;
+      align-items: start;
+      padding: 13px;
+      border: 1px solid var(--border);
+      border-left: 6px solid var(--unknown);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.98);
+      box-shadow: 0 10px 22px rgba(0,51,141,0.11);
+    }
+
+    .script-node {
+      cursor: pointer;
+      transition:
+        transform 140ms ease,
+        box-shadow 140ms ease,
+        border-color 140ms ease;
+    }
+
+    .script-node:hover {
+      transform: translateY(-2px);
+      border-color: #8fb7df;
+      box-shadow: 0 16px 34px rgba(0,51,141,0.18);
+    }
+
+    .kind-file { border-left-color: var(--file); }
+    .kind-table { border-left-color: var(--table); }
+    .kind-database { border-left-color: var(--database); }
+    .kind-api { border-left-color: var(--api); }
+    .kind-python_script { border-left-color: var(--python); }
+    .kind-sql_script { border-left-color: var(--sql); }
+    .kind-alteryx_workflow { border-left-color: var(--alteryx); }
+    .kind-bat_script { border-left-color: var(--bat); }
+
+    .icon {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--unknown);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .kind-file .icon { background: var(--file); }
+    .kind-table .icon { background: var(--table); }
+    .kind-database .icon { background: var(--database); }
+    .kind-api .icon { background: var(--api); }
+    .kind-python_script .icon { background: var(--python); }
+    .kind-sql_script .icon { background: var(--sql); }
+    .kind-alteryx_workflow .icon { background: var(--alteryx); }
+    .kind-bat_script .icon { background: var(--bat); }
+
+    .node-kind {
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .node-label {
+      font-size: 14px;
+      line-height: 1.25;
+      font-weight: 760;
+      overflow-wrap: anywhere;
+    }
+
+    .node-subtitle {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .stage-id {
+      display: inline-block;
+      margin-top: 9px;
+      padding: 4px 7px;
+      border-radius: 7px;
+      background: #eef2f7;
+      color: #0c233c;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .edge-path {
+      fill: none;
+      stroke: var(--line);
+      stroke-width: 2.2;
+      marker-end: url(#arrow);
+      pointer-events: none;
+    }
+
+    .edge-low {
+      stroke-dasharray: 6 5;
+      stroke-width: 1.8;
+    }
+
+    .edge-hit {
+      fill: none;
+      stroke: transparent;
+      stroke-width: 18;
+      pointer-events: stroke;
+    }
+
+    .edge-tooltip-text {
+      opacity: 0;
+      transition: opacity 120ms ease;
+      pointer-events: none;
+    }
+
+    .edge:hover .edge-tooltip-text {
+      opacity: 1;
+    }
+
+    .edge:hover .edge-path {
+      stroke: #00338d;
+      stroke-width: 2.8;
+    }
+
+    .edge-tooltip-text {
+      font: 14px "Cambria Math", Cambria, Georgia, serif;
+      font-weight: 800;
+      fill: #00338d;
+    }
+
+    .summary-preview {
+      position: fixed;
+      z-index: 40;
+      width: min(360px, calc(100vw - 40px));
+      padding: 16px 17px;
+      border: 1px solid rgba(208,215,226,0.86);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.84);
+      box-shadow: 0 18px 46px rgba(0,51,141,0.22);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+      transition:
+        opacity 120ms ease,
+        transform 120ms ease;
+      pointer-events: none;
+    }
+
+    .summary-preview.is-visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    .summary-preview-title {
+      margin-bottom: 7px;
+      color: #0c233c;
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .summary-preview-body {
+      color: #475467;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      padding: 32px;
+      background: rgba(15,23,42,0.26);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 160ms ease;
+    }
+
+    .modal-backdrop.is-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .script-modal {
+      width: min(760px, 100%);
+      max-height: min(680px, calc(100vh - 64px));
+      overflow: auto;
+      border: 1px solid rgba(208,215,226,0.86);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 26px 70px rgba(0,51,141,0.28);
+      transform: translateY(10px) scale(0.98);
+      transition: transform 160ms ease;
+    }
+
+    .modal-backdrop.is-visible .script-modal {
+      transform: translateY(0) scale(1);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 22px 24px 14px;
+      border-bottom: 1px solid rgba(208,215,226,0.72);
+    }
+
+    .modal-title {
+      margin: 0;
+      color: #0c233c;
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .modal-meta {
+      margin-top: 7px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .modal-pill {
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: #e8f2fc;
+      color: #475467;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .modal-close {
+      width: 32px;
+      height: 32px;
+      border: 0;
+      border-radius: 999px;
+      background: #e8f2fc;
+      color: #475467;
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .modal-close:hover {
+      background: #dbeaf8;
+      color: #0c233c;
+    }
+
+    .modal-body {
+      padding: 22px 24px 26px;
+    }
+
+    .modal-section-label {
+      margin: 0 0 8px;
+      color: #667085;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .modal-summary {
+      margin: 0;
+      color: #344054;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{ title }}</h1>
+    <div class="summary">{{ summary }}</div>
+    <div class="legend" aria-label="Flowchart legend">
+      <span><i class="swatch" style="background: var(--file)"></i>File</span>
+      <span><i class="swatch" style="background: var(--table)"></i>Table</span>
+      <span><i class="swatch" style="background: var(--database)"></i>Database</span>
+      <span><i class="swatch" style="background: var(--python)"></i>Python</span>
+      <span><i class="swatch" style="background: var(--sql)"></i>SQL</span>
+      <span><i class="swatch" style="background: var(--alteryx)"></i>Alteryx</span>
+      <span><i class="swatch" style="background: var(--bat)"></i>BAT</span>
+    </div>
+  </header>
+  <main>
+    <section class="canvas" aria-label="Workflow flowchart">
+      <svg class="edges" viewBox="0 0 {{ canvas_width }} {{ canvas_height }}" aria-hidden="true">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#6d86a3"></path>
+          </marker>
+        </defs>
+{{ edge_svg }}
+      </svg>
+{{ node_html }}
+    </section>
+  </main>
+  <div id="summaryPreview" class="summary-preview" aria-hidden="true">
+    <div id="summaryPreviewTitle" class="summary-preview-title"></div>
+    <div id="summaryPreviewBody" class="summary-preview-body"></div>
+  </div>
+  <div id="scriptModalBackdrop" class="modal-backdrop" aria-hidden="true">
+    <section class="script-modal" role="dialog" aria-modal="true" aria-labelledby="scriptModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="scriptModalTitle" class="modal-title"></h2>
+          <div class="modal-meta">
+            <span id="scriptModalType" class="modal-pill"></span>
+            <span id="scriptModalStage" class="modal-pill"></span>
+          </div>
+        </div>
+        <button id="scriptModalClose" class="modal-close" type="button" aria-label="Close">x</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-section-label">Detailed Summary</p>
+        <p id="scriptModalBody" class="modal-summary"></p>
+      </div>
+    </section>
+  </div>
+  <script>
+    const scriptNodes = document.querySelectorAll(".script-node");
+    const preview = document.getElementById("summaryPreview");
+    const previewTitle = document.getElementById("summaryPreviewTitle");
+    const previewBody = document.getElementById("summaryPreviewBody");
+    const modalBackdrop = document.getElementById("scriptModalBackdrop");
+    const modalTitle = document.getElementById("scriptModalTitle");
+    const modalType = document.getElementById("scriptModalType");
+    const modalStage = document.getElementById("scriptModalStage");
+    const modalBody = document.getElementById("scriptModalBody");
+    const modalClose = document.getElementById("scriptModalClose");
+
+    function placePreview(event) {
+      const margin = 18;
+      const previewWidth = preview.offsetWidth || 360;
+      const previewHeight = preview.offsetHeight || 160;
+      let left = event.clientX + margin;
+      let top = event.clientY + margin;
+
+      if (left + previewWidth > window.innerWidth - margin) {
+        left = event.clientX - previewWidth - margin;
+      }
+
+      if (top + previewHeight > window.innerHeight - margin) {
+        top = event.clientY - previewHeight - margin;
+      }
+
+      preview.style.left = `${Math.max(margin, left)}px`;
+      preview.style.top = `${Math.max(margin, top)}px`;
+    }
+
+    function showPreview(event) {
+      const highLevelSummary = event.currentTarget.dataset.highLevelSummary;
+      if (!highLevelSummary) return;
+
+      previewTitle.textContent = event.currentTarget.dataset.scriptName || "Script Summary";
+      previewBody.textContent = highLevelSummary;
+      placePreview(event);
+      preview.classList.add("is-visible");
+      preview.setAttribute("aria-hidden", "false");
+    }
+
+    function hidePreview() {
+      preview.classList.remove("is-visible");
+      preview.setAttribute("aria-hidden", "true");
+    }
+
+    function openModal(node) {
+      modalTitle.textContent = node.dataset.scriptName || "Script Summary";
+      modalType.textContent = node.dataset.scriptType || "Script";
+      modalStage.textContent = node.dataset.stageOrderId || "No Stage ID";
+      modalBody.textContent = node.dataset.detailedSummary || "No detailed summary available.";
+      modalBackdrop.classList.add("is-visible");
+      modalBackdrop.setAttribute("aria-hidden", "false");
+    }
+
+    function closeModal() {
+      modalBackdrop.classList.remove("is-visible");
+      modalBackdrop.setAttribute("aria-hidden", "true");
+    }
+
+    scriptNodes.forEach((node) => {
+      node.addEventListener("mouseenter", showPreview);
+      node.addEventListener("mousemove", placePreview);
+      node.addEventListener("mouseleave", hidePreview);
+      node.addEventListener("click", () => {
+        hidePreview();
+        openModal(node);
+      });
+    });
+
+    modalClose.addEventListener("click", closeModal);
+    modalBackdrop.addEventListener("click", (event) => {
+      if (event.target === modalBackdrop) {
+        closeModal();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeModal();
+      }
+    });
+  </script>
+</body>
+</html>

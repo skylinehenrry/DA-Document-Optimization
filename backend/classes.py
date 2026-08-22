@@ -64,9 +64,9 @@ class WorkflowNode(BaseModel):
     script_path: str
     script_type: str
     role: str | None = None
-    stage_ID: str | None = None
-    order_ID: str | None = None
-    stage_order_ID: str | None = None
+    stage_ID: str
+    order_ID: str
+    stage_order_ID: str
     order_confidence: Literal["high", "medium", "low"]
     order_evidence: str | None = None
 

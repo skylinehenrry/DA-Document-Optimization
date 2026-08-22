@@ -99,7 +99,8 @@ summaries_from_json = [
 
 flowchart_spec = construct_flowchart_spec(
     workflow_graph = workflow_network_from_json,
-    profiles = profiles_from_json
+    profiles = profiles_from_json,
+    summaries = summaries_from_json
 )
 
 (output_dir / "flowchart_spec.json").write_text(

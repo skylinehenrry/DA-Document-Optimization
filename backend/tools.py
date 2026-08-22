@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Literal
 from pydantic import BaseModel
 
+BACKEND_DIR = Path(__file__).parent
+PROMPTS_DIR = BACKEND_DIR / "prompts"
 
 #%%
 """
@@ -102,9 +104,9 @@ def create_dependency_chains(model: Literal["OpenAI", "Ollama"]) -> DependencyEx
 
     LLM = set_up_LLM(model = model)
 
-    import_prompt = ChatPromptTemplate.from_template(Path("./prompts/prompt_detect_imports.md").read_text(encoding = "utf-8"))
-    input_data_prompt = ChatPromptTemplate.from_template(Path("./prompts/prompt_detect_input_data.md").read_text(encoding = "utf-8"))
-    output_data_prompt = ChatPromptTemplate.from_template(Path("./prompts/prompt_detect_output_data.md").read_text(encoding = "utf-8"))
+    import_prompt = ChatPromptTemplate.from_template((PROMPTS_DIR / "prompt_detect_imports.md").read_text(encoding = "utf-8"))
+    input_data_prompt = ChatPromptTemplate.from_template((PROMPTS_DIR / "prompt_detect_input_data.md").read_text(encoding = "utf-8"))
+    output_data_prompt = ChatPromptTemplate.from_template((PROMPTS_DIR / "prompt_detect_output_data.md").read_text(encoding = "utf-8"))
 
     structured_LLM = LLM.with_structured_output(DependencyExtraction)
 
@@ -207,7 +209,7 @@ def construct_dependency_network(profiles: list[ScriptDependencyProfile],
     print(f"Constructing dependency network for the program...")
     LLM = set_up_LLM(model = model)
     
-    workflow_prompt = ChatPromptTemplate.from_template(Path("./prompts/prompt_construct_dependency_network.md").read_text(encoding = "utf-8"))
+    workflow_prompt = ChatPromptTemplate.from_template((PROMPTS_DIR / "prompt_construct_dependency_network.md").read_text(encoding = "utf-8"))
     workflow_chain = workflow_prompt | LLM.with_structured_output(schema = WorkflowDependencyGraph)
     workflow_graph = workflow_chain.invoke({"script_dependency_profiles": profiles_to_json(profiles)})
     
@@ -276,7 +278,7 @@ async def generate_summary_for_folder(valid_file_list: list[Path],
                                       max_concurrent_files: int = 10) -> list[ScriptSummary]:
     
     LLM = set_up_LLM(model = model)
-    summary_prompt = ChatPromptTemplate.from_template(Path("./prompts/prompt_generate_script_summary.md").read_text(encoding = "utf-8"))
+    summary_prompt = ChatPromptTemplate.from_template((PROMPTS_DIR / "prompt_generate_script_summary.md").read_text(encoding = "utf-8"))
     summary_chain = summary_prompt | LLM.with_structured_output(schema = ScriptSummary) # Script Summary class can be found in classes.py
 
     semaphore = asyncio.Semaphore(max_concurrent_files)
@@ -296,7 +298,7 @@ async def generate_summary_for_folder(valid_file_list: list[Path],
 
 #%%
 """
-Tools for building DA Document based on the following objects
+Tools for building objects used for DA Document based on the following objects
     - ScriptDependencyProfile # for providing script info and dependencies
     - WorkflowDependencyGraph # for providing dependency network on flow chart construction
     - ScriptSummary # for providing script summary, as well as input file / output file profiles
@@ -394,15 +396,18 @@ def resource_type_to_node_kind(resource_type: str) -> FlowchartNodeKind:
 def construct_flowchart_spec(
     workflow_graph: WorkflowDependencyGraph,
     profiles: list[ScriptDependencyProfile],
+    summaries: list[ScriptSummary] | None = None,
 ) -> FlowchartSpec:
     """
     Tool for building FlowchartSpec based on the following objects:
     - WorkflowDependencyGraph # script nodes and script-to-script relationships
     - ScriptDependencyProfile # input data, output data, and dependency refs
+    - ScriptSummary # high-level and detailed summaries for script hover/click UI
 
     For each script in the workflow graph:
     - Create one script node
     - Preserve script type, role, stage ID, and order ID
+    - Attach script summary details when a matching ScriptSummary is available
     - Add script-to-script dependency edges
 
     For each dependency profile:
@@ -434,8 +439,42 @@ def construct_flowchart_spec(
             spec.edges.append(edge)
             created_edge_keys.add(key)
 
+    summary_by_name = {
+        summary.script_name: summary
+        for summary in summaries or []
+    }
+
+    summary_by_path = {
+        summary.script_location: summary
+        for summary in summaries or []
+    }
+
     # Add script nodes from workflow graph
     for node in workflow_graph.nodes:
+        script_summary = summary_by_path.get(node.script_path)
+
+        if script_summary is None:
+            script_summary = summary_by_name.get(node.script_name)
+
+        details = {
+            "script_path": node.script_path,
+            "script_type": node.script_type,
+            "graph_label": node.label,
+            "order_confidence": node.order_confidence,
+            "order_evidence": node.order_evidence,
+        }
+
+        if script_summary is not None:
+            details.update(
+                {
+                    "script_high_level_summary": script_summary.script_high_level_summary,
+                    "script_detailed_summary": script_summary.script_detailed_summary,
+                    "script_input_data": script_summary.script_input_data,
+                    "script_output_data": script_summary.script_output_data,
+                    "script_summary_stage_order_ID": script_summary.script_stage_order_ID,
+                }
+            )
+
         add_node(
             FlowchartNode(
                 id = node.id,
@@ -444,13 +483,7 @@ def construct_flowchart_spec(
                 stage_ID = node.stage_ID,
                 stage_order_ID = node.stage_order_ID,
                 subtitle = node.role,
-                details = {
-                    "script_path": node.script_path,
-                    "script_type": node.script_type,
-                    "graph_label": node.label,
-                    "order_confidence": node.order_confidence,
-                    "order_evidence": node.order_evidence,
-                },
+                details = details,
             )
         )
 
@@ -585,280 +618,40 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
     title = escape_html(flowchart_spec.title)
     summary = escape_html(flowchart_spec.summary or "")
 
-    # The HTML is standalone: CSS, SVG markers, nodes, and edges all live here.
-    html_output = f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title}</title>
-  <style>
-    :root {{
-      --bg: #f6f8fb;
-      --surface: #ffffff;
-      --ink: #172033;
-      --muted: #667085;
-      --border: #d0d7e2;
-      --line: #8390a3;
-      --file: #108765;
-      --table: #7b4fd6;
-      --database: #0f766e;
-      --api: #0478a8;
-      --python: #2563c7;
-      --sql: #6d45c5;
-      --alteryx: #c95f1b;
-      --bat: #4b5563;
-      --unknown: #778194;
-    }}
+    template_path = Path(__file__).parent / "templates" / "workflow_flowchart.html"
+    template = template_path.read_text(encoding = "utf-8")
 
-    * {{ box-sizing: border-box; }}
-
-    body {{
-      margin: 0;
-      min-height: 100vh;
-      font-family: "Cambria Math", Cambria, Georgia, serif;
-      font-weight: 700;
-      color: var(--ink);
-      background:
-        linear-gradient(180deg, rgba(255,255,255,0.92), rgba(246,248,251,0.96)),
-        var(--bg);
-    }}
-
-    header {{
-      padding: 24px 32px 18px;
-      border-bottom: 1px solid var(--border);
-      background: rgba(255,255,255,0.92);
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }}
-
-    h1 {{
-      margin: 0;
-      font-size: 24px;
-      line-height: 1.2;
-      letter-spacing: 0;
-    }}
-
-    .summary {{
-      margin-top: 7px;
-      max-width: 980px;
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 700;
-      line-height: 1.45;
-    }}
-
-    .legend {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 9px;
-      margin-top: 15px;
-    }}
-
-    .legend span {{
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      padding: 6px 9px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface);
-      color: #475467;
-      font-size: 12px;
-      font-weight: 700;
-    }}
-
-    .swatch {{
-      width: 11px;
-      height: 11px;
-      border-radius: 3px;
-      display: inline-block;
-    }}
-
-    main {{
-      padding: 28px;
-      overflow: auto;
-    }}
-
-    .canvas {{
-      position: relative;
-      width: {canvas_width}px;
-      height: {canvas_height}px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #ffffff;
-      box-shadow: 0 16px 38px rgba(16,24,40,0.08);
-    }}
-
-    svg.edges {{
-      position: absolute;
-      inset: 0;
-      width: {canvas_width}px;
-      height: {canvas_height}px;
-      z-index: 1;
-      pointer-events: auto;
-      overflow: visible;
-    }}
-
-    .node {{
-      position: absolute;
-      z-index: 3;
-      width: 230px;
-      min-height: 92px;
-      display: grid;
-      grid-template-columns: 42px 1fr;
-      gap: 11px;
-      align-items: start;
-      padding: 13px;
-      border: 1px solid var(--border);
-      border-left: 6px solid var(--unknown);
-      border-radius: 8px;
-      background: rgba(255,255,255,0.98);
-      box-shadow: 0 10px 22px rgba(16,24,40,0.10);
-    }}
-
-    .kind-file {{ border-left-color: var(--file); }}
-    .kind-table {{ border-left-color: var(--table); }}
-    .kind-database {{ border-left-color: var(--database); }}
-    .kind-api {{ border-left-color: var(--api); }}
-    .kind-python_script {{ border-left-color: var(--python); }}
-    .kind-sql_script {{ border-left-color: var(--sql); }}
-    .kind-alteryx_workflow {{ border-left-color: var(--alteryx); }}
-    .kind-bat_script {{ border-left-color: var(--bat); }}
-
-    .icon {{
-      width: 36px;
-      height: 36px;
-      display: grid;
-      place-items: center;
-      border-radius: 8px;
-      background: var(--unknown);
-      color: #fff;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.02em;
-    }}
-
-    .kind-file .icon {{ background: var(--file); }}
-    .kind-table .icon {{ background: var(--table); }}
-    .kind-database .icon {{ background: var(--database); }}
-    .kind-api .icon {{ background: var(--api); }}
-    .kind-python_script .icon {{ background: var(--python); }}
-    .kind-sql_script .icon {{ background: var(--sql); }}
-    .kind-alteryx_workflow .icon {{ background: var(--alteryx); }}
-    .kind-bat_script .icon {{ background: var(--bat); }}
-
-    .node-kind {{
-      margin-bottom: 4px;
-      color: var(--muted);
-      font-size: 10px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }}
-
-    .node-label {{
-      font-size: 14px;
-      line-height: 1.25;
-      font-weight: 760;
-      overflow-wrap: anywhere;
-    }}
-
-    .node-subtitle {{
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 700;
-      line-height: 1.35;
-      overflow-wrap: anywhere;
-    }}
-
-    .stage-id {{
-      display: inline-block;
-      margin-top: 9px;
-      padding: 4px 7px;
-      border-radius: 7px;
-      background: #eef2f7;
-      color: #344054;
-      font-size: 11px;
-      font-weight: 700;
-    }}
-
-    .edge-path {{
-      fill: none;
-      stroke: var(--line);
-      stroke-width: 2.2;
-      marker-end: url(#arrow);
-      pointer-events: none;
-    }}
-
-    .edge-low {{
-      stroke-dasharray: 6 5;
-      stroke-width: 1.8;
-    }}
-
-    .edge-hit {{
-      fill: none;
-      stroke: transparent;
-      stroke-width: 18;
-      pointer-events: stroke;
-    }}
-
-    .edge-tooltip-text {{
-      opacity: 0;
-      transition: opacity 120ms ease;
-      pointer-events: none;
-    }}
-
-    .edge:hover .edge-tooltip-text {{
-      opacity: 1;
-    }}
-
-    .edge:hover .edge-path {{
-      stroke: #344054;
-      stroke-width: 2.8;
-    }}
-
-    .edge-tooltip-text {{
-      font: 14px "Cambria Math", Cambria, Georgia, serif;
-      font-weight: 800;
-      fill: #344054;
-    }}
-  </style>
-</head>
-<body>
-  <header>
-    <h1>{title}</h1>
-    <div class="summary">{summary}</div>
-    <div class="legend" aria-label="Flowchart legend">
-      <span><i class="swatch" style="background: var(--file)"></i>File</span>
-      <span><i class="swatch" style="background: var(--table)"></i>Table</span>
-      <span><i class="swatch" style="background: var(--database)"></i>Database</span>
-      <span><i class="swatch" style="background: var(--python)"></i>Python</span>
-      <span><i class="swatch" style="background: var(--sql)"></i>SQL</span>
-      <span><i class="swatch" style="background: var(--alteryx)"></i>Alteryx</span>
-      <span><i class="swatch" style="background: var(--bat)"></i>BAT</span>
-    </div>
-  </header>
-  <main>
-    <section class="canvas" aria-label="Workflow flowchart">
-      <svg class="edges" viewBox="0 0 {canvas_width} {canvas_height}" aria-hidden="true">
-        <defs>
-          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L0,6 L9,3 z" fill="#8390a3"></path>
-          </marker>
-        </defs>
-{edge_svg}
-      </svg>
-{node_html}
-    </section>
-  </main>
-</body>
-</html>
-"""
+    html_output = render_html_template(
+        template = template,
+        context = {
+            "title": title,
+            "summary": summary,
+            "canvas_width": canvas_width,
+            "canvas_height": canvas_height,
+            "edge_svg": edge_svg,
+            "node_html": node_html,
+        },
+    )
 
     output_path.write_text(html_output, encoding = "utf-8")
+
+
+def render_html_template(template: str, context: dict[str, object]) -> str:
+    """
+    Helper for rendering standalone HTML templates.
+    - Uses {{ placeholder }} tokens in the template file
+    - Replaces each token with the provided context value
+    - Keeps HTML / CSS / JavaScript outside the Python f-string
+    """
+    rendered_template = template
+
+    for key, value in context.items():
+        rendered_template = rendered_template.replace(
+            f"{{{{ {key} }}}}",
+            str(value),
+        )
+
+    return rendered_template
 
 
 def calculate_flowchart_positions(flowchart_spec: FlowchartSpec,
@@ -975,8 +768,28 @@ def build_flowchart_node_html(node: FlowchartNode, position: dict[str, int]) -> 
     icon = node_kind_to_icon_text(node.kind)
     stage = node.stage_order_ID or node.stage_ID
     stage_html = f'<div class="stage-id">{escape_html(stage)}</div>' if stage else ""
+    is_script_node = node.kind in {
+        "python_script",
+        "sql_script",
+        "alteryx_workflow",
+        "bat_script",
+    }
+    high_level_summary = node.details.get("script_high_level_summary", "")
+    detailed_summary = node.details.get("script_detailed_summary", "")
+    script_type = node.details.get("script_type", node.kind.replace("_", " "))
+    script_node_class = " script-node" if is_script_node else ""
+    script_data_attrs = ""
 
-    return f"""      <article class="node {kind_class}" style="left: {position["x"]}px; top: {position["y"]}px;">
+    if is_script_node:
+        script_data_attrs = (
+            f' data-script-name="{escape_html(node.label)}"'
+            f' data-script-type="{escape_html(script_type)}"'
+            f' data-stage-order-id="{escape_html(stage or "")}"'
+            f' data-high-level-summary="{escape_html(high_level_summary)}"'
+            f' data-detailed-summary="{escape_html(detailed_summary)}"'
+        )
+
+    return f"""      <article class="node {kind_class}{script_node_class}" style="left: {position["x"]}px; top: {position["y"]}px;"{script_data_attrs}>
         <div class="icon">{escape_html(icon)}</div>
         <div>
           <div class="node-kind">{escape_html(node.kind.replace("_", " "))}</div>
