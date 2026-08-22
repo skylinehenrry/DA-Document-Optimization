@@ -1,0 +1,90 @@
+{
+  "workflow_summary": "The workflow consists of utility modules (classes, tools) imported by an orchestrator (main) and a documentation generator. Classes define data models used by the logic engine (tools). The main script orchestrates the process and writes output profiles/summaries. Documentation generates a workbook independently but relies on the same tooling.",
+  "nodes": [
+    {
+      "id": "classes_py",
+      "label": "Data Models",
+      "script_name": "classes.py",
+      "script_path": "/Users/henry/Documents/Projects/DA Document Optimization/classes.py",
+      "script_type": "python",
+      "role": null,
+      "stage_ID": null,
+      "order_ID": null,
+      "stage_order_ID": null,
+      "order_confidence": "high",
+      "order_evidence": "Base module with no dependencies, imported by tools.py. Assigned first in Stage Z."
+    },
+    {
+      "id": "tools_py",
+      "label": "Dependency Logic",
+      "script_name": "tools.py",
+      "script_path": "/Users/henry/Documents/Projects/DA Document Optimization/tools.py",
+      "script_type": "python",
+      "role": null,
+      "stage_ID": null,
+      "order_ID": null,
+      "stage_order_ID": null,
+      "order_confidence": "high",
+      "order_evidence": "Imports classes.py and is imported by main.py/documentation.py. Assigned second in Stage Z."
+    },
+    {
+      "id": "main_py",
+      "label": "Orchestrator",
+      "script_name": "main.py",
+      "script_path": "/Users/henry/Documents/Projects/DA Document Optimization/main.py",
+      "script_type": "python",
+      "role": null,
+      "stage_ID": null,
+      "order_ID": null,
+      "stage_order_ID": null,
+      "order_confidence": "high",
+      "order_evidence": "Entry point script importing tools. Assigned third in Stage Z."
+    },
+    {
+      "id": "documentation_py",
+      "label": "Documentation Generator",
+      "script_name": "documentation.py",
+      "script_path": "/Users/henry/Documents/Projects/DA Document Optimization/documentation.py",
+      "script_type": "python",
+      "role": null,
+      "stage_ID": null,
+      "order_ID": null,
+      "stage_order_ID": null,
+      "order_confidence": "medium",
+      "order_evidence": "Imports tools but writes distinct output (workbook). Assigned to Stage E for reporting."
+    }
+  ],
+  "edges": [
+    {
+      "source": "classes_py",
+      "target": "tools_py",
+      "relationship": "code_dependency",
+      "shared_resource": null,
+      "evidence": "tools.py imports classes (ScriptDependencyProfile, etc.) from classes module.",
+      "confidence": "high"
+    },
+    {
+      "source": "tools_py",
+      "target": "main_py",
+      "relationship": "code_dependency",
+      "shared_resource": null,
+      "evidence": "main.py imports tools module to execute workflow logic.",
+      "confidence": "high"
+    },
+    {
+      "source": "tools_py",
+      "target": "documentation_py",
+      "relationship": "code_dependency",
+      "shared_resource": null,
+      "evidence": "documentation.py imports tools module for dependency detection logic.",
+      "confidence": "high"
+    }
+  ],
+  "unresolved_items": [
+    "tools.py reads prompt files (prompt_detect_imports.md, etc.) which are not written by any script in the profile.",
+    "main.py writes output files (profiles.json, workflow_network.json, summaries.json) that are not read by other scripts.",
+    "documentation.py writes to a dynamic workbook_path variable rather than a static file path.",
+    "No data dependency exists between main.py and documentation.py outputs as they write to different resources."
+  ],
+  "mermaid_flowchart": null
+}

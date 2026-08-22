@@ -1,0 +1,224 @@
+[
+  {
+    "file_name": "documentation.py",
+    "file_path": "/Users/henry/Documents/Projects/DA Document Optimization/documentation.py",
+    "script_type": "python",
+    "dependencies": [
+      {
+        "relationship": "imports",
+        "target": {
+          "type": "module",
+          "name": "tools",
+          "path": "",
+          "details": {
+            "imported_names": "*",
+            "alias": "",
+            "is_custom": true
+          }
+        },
+        "evidence": "from tools import *",
+        "confidence": "high",
+        "details": {}
+      },
+      {
+        "relationship": "writes",
+        "target": {
+          "type": "file",
+          "name": "workbook_path",
+          "path": "",
+          "details": {
+            "source_context": "Function argument in write_summary_to_excel"
+          }
+        },
+        "evidence": "write_summary_to_excel(workbook_path: str, ...)",
+        "confidence": "medium",
+        "details": {}
+      }
+    ],
+    "unclear_items": [
+      "Output path is passed as a dynamic variable 'workbook_path' rather than a literal file path. The explicit file save operation (e.g., .save()) is not visible in the provided snippet, though implied by the function name."
+    ]
+  },
+  {
+    "file_name": "tools.py",
+    "file_path": "/Users/henry/Documents/Projects/DA Document Optimization/tools.py",
+    "script_type": "python",
+    "dependencies": [
+      {
+        "relationship": "imports",
+        "target": {
+          "type": "module",
+          "name": "classes",
+          "path": "",
+          "details": {
+            "imported_names": [
+              "ScriptDependencyProfile",
+              "DependencyRef",
+              "ResourceRef",
+              "ScriptSummary",
+              "DependencyExtraction",
+              "WorkflowDependencyGraph"
+            ],
+            "alias": null,
+            "is_custom": true
+          }
+        },
+        "evidence": "from classes import ScriptDependencyProfile, DependencyRef, ResourceRef, ScriptSummary, DependencyExtraction",
+        "confidence": "high",
+        "details": {}
+      },
+      {
+        "relationship": "reads",
+        "target": {
+          "type": "file",
+          "name": "prompt_detect_imports.md",
+          "path": "./prompts/prompt_detect_imports.md",
+          "details": {}
+        },
+        "evidence": null,
+        "confidence": "high",
+        "details": {
+          "source_context": "Function: create_dependency_chains, Line: ChatPromptTemplate.from_template(Path('./prompts/prompt_detect_imports.md').read_text(...))"
+        }
+      },
+      {
+        "relationship": "reads",
+        "target": {
+          "type": "file",
+          "name": "prompt_detect_input_data.md",
+          "path": "./prompts/prompt_detect_input_data.md",
+          "details": {}
+        },
+        "evidence": null,
+        "confidence": "high",
+        "details": {
+          "source_context": "Function: create_dependency_chains, Line: ChatPromptTemplate.from_template(Path('./prompts/prompt_detect_input_data.md').read_text(...))"
+        }
+      },
+      {
+        "relationship": "reads",
+        "target": {
+          "type": "file",
+          "name": "prompt_detect_output_data.md",
+          "path": "./prompts/prompt_detect_output_data.md",
+          "details": {}
+        },
+        "evidence": null,
+        "confidence": "high",
+        "details": {
+          "source_context": "Function: create_dependency_chains, Line: ChatPromptTemplate.from_template(Path('./prompts/prompt_detect_output_data.md').read_text(...))"
+        }
+      },
+      {
+        "relationship": "reads",
+        "target": {
+          "type": "file",
+          "name": "prompt_construct_dependency_network.md",
+          "path": "./prompts/prompt_construct_dependency_network.md",
+          "details": {}
+        },
+        "evidence": null,
+        "confidence": "high",
+        "details": {
+          "source_context": "Function: construct_dependency_network, Line: ChatPromptTemplate.from_template(Path('./prompts/prompt_construct_dependency_network.md').read_text(...))"
+        }
+      },
+      {
+        "relationship": "reads",
+        "target": {
+          "type": "file",
+          "name": "prompt_generate_script_summary.md",
+          "path": "./prompts/prompt_generate_script_summary.md",
+          "details": {}
+        },
+        "evidence": null,
+        "confidence": "high",
+        "details": {
+          "source_context": "Function: generate_summary_for_folder, Line: ChatPromptTemplate.from_template(Path('./prompts/prompt_generate_script_summary.md').read_text(...))"
+        }
+      }
+    ],
+    "unclear_items": [
+      "Dynamic input files (scripts in valid_file_list) are read via TextLoader but paths are not statically defined in the code, relying on runtime directory iteration.",
+      "Files passed to extract_dependencies_for_file and generate_summary_for_file are inputs to the analysis logic but their specific paths vary based on user-provided script_path argument.",
+      "tools.py: output data failed after 3 attempts: Invalid json output: \nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE "
+    ]
+  },
+  {
+    "file_name": "classes.py",
+    "file_path": "/Users/henry/Documents/Projects/DA Document Optimization/classes.py",
+    "script_type": "python",
+    "dependencies": [],
+    "unclear_items": [
+      "classes.py: input data failed after 3 attempts: Invalid json output: \nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE "
+    ]
+  },
+  {
+    "file_name": "main.py",
+    "file_path": "/Users/henry/Documents/Projects/DA Document Optimization/main.py",
+    "script_type": "python",
+    "dependencies": [
+      {
+        "relationship": "imports",
+        "target": {
+          "type": "module",
+          "name": "tools",
+          "path": "",
+          "details": {
+            "imported_names": [],
+            "alias": null,
+            "is_custom": true
+          }
+        },
+        "evidence": "import tools",
+        "confidence": "high",
+        "details": {}
+      },
+      {
+        "relationship": "writes",
+        "target": {
+          "type": "file",
+          "name": "outputs/profiles.json",
+          "path": "outputs/profiles.json",
+          "details": {
+            "source_context": "Main execution block after asyncio.run(main())"
+          }
+        },
+        "evidence": "(output_dir / \"profiles.json\").write_text(\n    json.dumps([profile.model_dump() for profile in profiles], indent = 2, ensure_ascii = False),\n    encoding = \"utf-8\"\n)",
+        "confidence": "high",
+        "details": {}
+      },
+      {
+        "relationship": "writes",
+        "target": {
+          "type": "file",
+          "name": "outputs/workflow_network.json",
+          "path": "outputs/workflow_network.json",
+          "details": {
+            "source_context": "Main execution block after asyncio.run(main())"
+          }
+        },
+        "evidence": "(output_dir / \"workflow_network.json\").write_text(\n    workflow_network.model_dump_json(indent = 2),\n    encoding = \"utf-8\"\n)",
+        "confidence": "high",
+        "details": {}
+      },
+      {
+        "relationship": "writes",
+        "target": {
+          "type": "file",
+          "name": "outputs/summaries.json",
+          "path": "outputs/summaries.json",
+          "details": {
+            "source_context": "Main execution block after asyncio.run(main())"
+          }
+        },
+        "evidence": "(output_dir / \"summaries.json\").write_text(\n    json.dumps([summary.model_dump() for summary in summaries], indent = 2, ensure_ascii = False),\n    encoding = \"utf-8\"\n)",
+        "confidence": "high",
+        "details": {}
+      }
+    ],
+    "unclear_items": [
+      "main.py: input data failed after 3 attempts: Invalid json output: \nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE "
+    ]
+  }
+]

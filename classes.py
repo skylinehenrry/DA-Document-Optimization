@@ -97,7 +97,6 @@ class WorkflowDependencyGraph(BaseModel):
 Define output scheme on Script Summary produced by generative AI
 The output should be a ScriptSummary object with the following attributes & methods
 
-@dataclass
 ScriptSummary
     script_type: str[Python, SQL, Alteryx] # The input script should either be a python script, an SQL script, an Alteryx workflow or a BAT file
     script_name: str # name of the script (e.g. main.py)
@@ -119,3 +118,57 @@ class ScriptSummary(BaseModel):
     script_detailed_summary: str
     script_input_data: list[str] = Field(default_factory = list)
     script_output_data: list[str] = Field(default_factory = list)
+
+
+#%%
+"""
+Class for constructing flow chart
+Integrades both script nodes and data nodes to produce FlowchartSpec which constructs the entire workflow flowchart
+"""
+FlowchartNodeKind = Literal[
+    "file",
+    "table",
+    "database",
+    "api",
+    "python_script",
+    "sql_script",
+    "alteryx_workflow",
+    "bat_script",
+    "unknown",
+]
+
+FlowchartEdgeKind = Literal[
+    "reads",
+    "writes",
+    "data_dependency",
+    "code_dependency",
+    "execution_dependency",
+    "inferred_order",
+    "unknown",
+]
+
+
+class FlowchartNode(BaseModel):
+    id: str
+    label: str
+    kind: FlowchartNodeKind
+    stage_ID: str | None = None
+    stage_order_ID: str | None = None
+    subtitle: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class FlowchartEdge(BaseModel):
+    source: str
+    target: str
+    kind: FlowchartEdgeKind
+    label: str | None = None
+    confidence: Literal["high", "medium", "low"] = "medium"
+    evidence: str | None = None
+
+
+class FlowchartSpec(BaseModel):
+    title: str = "Workflow Flowchart"
+    summary: str | None = None
+    nodes: list[FlowchartNode] = Field(default_factory=list)
+    edges: list[FlowchartEdge] = Field(default_factory=list)
