@@ -6,43 +6,86 @@
   <title>{{ title }}</title>
   <style>
     :root {
-      --bg: #f3f7fc;
+      --bg: #f8fafd;
       --surface: #ffffff;
       --ink: #0c233c;
-      --muted: #4f647a;
-      --border: #c7d8ea;
-      --line: #6d86a3;
-      --file: #00c0ae;
-      --table: #7213ea;
-      --database: #098e7e;
-      --api: #00b8f5;
-      --python: #00338d;
-      --sql: #510dbc;
-      --alteryx: #005eb8;
-      --bat: #333333;
-      --unknown: #666666;
+      --muted: #75829a;
+      --border: #d7deea;
+      --border-soft: #e6ebf2;
+      --line: #f3f5f8;
+      --line-hover: #d8e0ec;
+      --incoming: #e83e8c;
+      --outgoing: #2f6bff;
+      --python-chip: #eaf2ff;
+      --python-accent: #2f6bff;
+      --sql-chip: #f0ecff;
+      --sql-accent: #7357d9;
+      --alteryx-chip: #fff1e8;
+      --alteryx-accent: #d66a2a;
+      --bat-chip: #eef2f7;
+      --bat-accent: #596579;
+      --markdown-chip: #f3ecff;
+      --markdown-accent: #8a4fe8;
+      --json-chip: #fdecf5;
+      --json-accent: #e83e8c;
+      --csv-chip: #e8f7f4;
+      --csv-accent: #0f8f7b;
+      --excel-chip: #eaf7ef;
+      --excel-accent: #2e8b57;
+      --database-chip: #e7f6f8;
+      --database-accent: #007a8a;
+      --table-chip: #f0ecff;
+      --table-accent: #7357d9;
+      --html-chip: #fff0e8;
+      --html-accent: #e85d2a;
+      --log-chip: #f1f4f8;
+      --log-accent: #718096;
+      --file-chip: #f3f5f8;
+      --file-accent: #8a94a6;
+      --folder-chip: #fff7de;
+      --folder-accent: #c98a00;
+      --api-chip: #e8f2ff;
+      --api-accent: #005eb8;
+      --unknown-chip: #f3f5f8;
+      --unknown-accent: #8a94a6;
     }
 
     * { box-sizing: border-box; }
 
+    html,
+    body {
+      height: 100%;
+    }
+
     body {
       margin: 0;
-      min-height: 100vh;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       font-family: "Cambria Math", Cambria, Georgia, serif;
       font-weight: 700;
       color: var(--ink);
       background:
-        linear-gradient(180deg, rgba(255,255,255,0.94), rgba(243,247,252,0.98)),
+        linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,253,0.98)),
         var(--bg);
     }
 
     header {
-      padding: 24px 32px 18px;
+      flex: 0 0 auto;
+      padding: 20px 28px 14px;
       border-bottom: 1px solid var(--border);
-      background: rgba(255,255,255,0.94);
+      background: rgba(255,255,255,0.96);
       position: sticky;
       top: 0;
       z-index: 10;
+    }
+
+    .header-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
     }
 
     h1 {
@@ -61,36 +104,75 @@
       line-height: 1.45;
     }
 
-    .legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 9px;
-      margin-top: 15px;
-    }
-
-    .legend span {
+    .zoom-controls {
       display: inline-flex;
       align-items: center;
-      gap: 7px;
-      padding: 6px 9px;
+      gap: 6px;
+      padding: 4px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface);
-      color: #475467;
-      font-size: 12px;
-      font-weight: 700;
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: 0 8px 20px rgba(16,24,40,0.04);
     }
 
-    .swatch {
-      width: 11px;
-      height: 11px;
-      border-radius: 3px;
-      display: inline-block;
+    .zoom-button {
+      min-width: 34px;
+      height: 30px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: #005eb8;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .zoom-button:hover {
+      background: #e8f2ff;
+    }
+
+    .zoom-value {
+      min-width: 48px;
+      color: #475467;
+      font-size: 12px;
+      font-weight: 800;
+      text-align: center;
     }
 
     main {
-      padding: 28px;
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 18px 22px 22px;
       overflow: auto;
+      scrollbar-gutter: stable both-edges;
+      overscroll-behavior: contain;
+    }
+
+    main::-webkit-scrollbar {
+      width: 14px;
+      height: 14px;
+    }
+
+    main::-webkit-scrollbar-track {
+      background: #eef2f7;
+      border-radius: 999px;
+    }
+
+    main::-webkit-scrollbar-thumb {
+      border: 3px solid #eef2f7;
+      border-radius: 999px;
+      background: #b9c5d6;
+    }
+
+    main::-webkit-scrollbar-thumb:hover {
+      background: #8a94a6;
+    }
+
+    .canvas-sizer {
+      position: relative;
+      width: {{ canvas_width }}px;
+      height: {{ canvas_height }}px;
     }
 
     .canvas {
@@ -100,7 +182,8 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       background: #ffffff;
-      box-shadow: 0 16px 38px rgba(0,51,141,0.10);
+      box-shadow: 0 12px 30px rgba(16,24,40,0.06);
+      transform-origin: top left;
     }
 
     svg.edges {
@@ -116,18 +199,17 @@
     .node {
       position: absolute;
       z-index: 3;
-      width: 230px;
-      min-height: 92px;
+      width: 300px;
+      height: 82px;
       display: grid;
-      grid-template-columns: 42px 1fr;
-      gap: 11px;
-      align-items: start;
-      padding: 13px;
+      grid-template-columns: 56px minmax(0, 1fr);
+      gap: 14px;
+      align-items: center;
+      padding: 12px 16px;
       border: 1px solid var(--border);
-      border-left: 6px solid var(--unknown);
       border-radius: 8px;
-      background: rgba(255,255,255,0.98);
-      box-shadow: 0 10px 22px rgba(0,51,141,0.11);
+      background: #ffffff;
+      box-shadow: 0 10px 24px rgba(16,24,40,0.06);
     }
 
     .script-node {
@@ -140,43 +222,63 @@
 
     .script-node:hover {
       transform: translateY(-2px);
-      border-color: #8fb7df;
-      box-shadow: 0 16px 34px rgba(0,51,141,0.18);
+      border-color: #b8c7d9;
+      box-shadow: 0 16px 34px rgba(16,24,40,0.10);
     }
-
-    .kind-file { border-left-color: var(--file); }
-    .kind-table { border-left-color: var(--table); }
-    .kind-database { border-left-color: var(--database); }
-    .kind-api { border-left-color: var(--api); }
-    .kind-python_script { border-left-color: var(--python); }
-    .kind-sql_script { border-left-color: var(--sql); }
-    .kind-alteryx_workflow { border-left-color: var(--alteryx); }
-    .kind-bat_script { border-left-color: var(--bat); }
 
     .icon {
-      width: 36px;
-      height: 36px;
+      width: 52px;
+      height: 52px;
       display: grid;
       place-items: center;
-      border-radius: 8px;
-      background: var(--unknown);
-      color: #fff;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.02em;
+      border-radius: 11px;
+      background: var(--unknown-chip);
+      color: var(--unknown-accent);
+      line-height: 1;
     }
 
-    .kind-file .icon { background: var(--file); }
-    .kind-table .icon { background: var(--table); }
-    .kind-database .icon { background: var(--database); }
-    .kind-api .icon { background: var(--api); }
-    .kind-python_script .icon { background: var(--python); }
-    .kind-sql_script .icon { background: var(--sql); }
-    .kind-alteryx_workflow .icon { background: var(--alteryx); }
-    .kind-bat_script .icon { background: var(--bat); }
+    .icon svg {
+      width: 31px;
+      height: 31px;
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .icon-text {
+      fill: currentColor;
+      stroke: none;
+      font: 800 8px "Cambria Math", Cambria, Georgia, serif;
+      dominant-baseline: middle;
+      text-anchor: middle;
+    }
+
+    .type-alteryx .icon .icon-text,
+    .type-json .icon .icon-text,
+    .type-html .icon .icon-text {
+      font-size: 9px;
+    }
+
+    .type-python .icon { background: var(--python-chip); color: var(--python-accent); }
+    .type-sql .icon { background: var(--sql-chip); color: var(--sql-accent); }
+    .type-alteryx .icon { background: var(--alteryx-chip); color: var(--alteryx-accent); font-size: 27px; }
+    .type-bat .icon { background: var(--bat-chip); color: var(--bat-accent); font-size: 16px; }
+    .type-markdown .icon { background: var(--markdown-chip); color: var(--markdown-accent); font-size: 19px; }
+    .type-json .icon { background: var(--json-chip); color: var(--json-accent); font-size: 22px; }
+    .type-csv .icon { background: var(--csv-chip); color: var(--csv-accent); font-size: 21px; }
+    .type-excel .icon { background: var(--excel-chip); color: var(--excel-accent); font-size: 22px; }
+    .type-database .icon { background: var(--database-chip); color: var(--database-accent); }
+    .type-table .icon { background: var(--table-chip); color: var(--table-accent); }
+    .type-html .icon { background: var(--html-chip); color: var(--html-accent); font-size: 15px; }
+    .type-log .icon { background: var(--log-chip); color: var(--log-accent); font-size: 12px; }
+    .type-file .icon { background: var(--file-chip); color: var(--file-accent); font-size: 11px; }
+    .type-folder .icon { background: var(--folder-chip); color: var(--folder-accent); }
+    .type-api .icon { background: var(--api-chip); color: var(--api-accent); }
 
     .node-kind {
-      margin-bottom: 4px;
       color: var(--muted);
       font-size: 10px;
       font-weight: 800;
@@ -185,19 +287,29 @@
     }
 
     .node-label {
-      font-size: 14px;
-      line-height: 1.25;
+      margin-top: 3px;
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.18;
       font-weight: 760;
       overflow-wrap: anywhere;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
     }
 
     .node-subtitle {
-      margin-top: 6px;
+      margin-top: 4px;
       color: var(--muted);
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
-      line-height: 1.35;
+      line-height: 1.25;
       overflow-wrap: anywhere;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 1;
+      overflow: hidden;
     }
 
     .stage-id {
@@ -214,14 +326,13 @@
     .edge-path {
       fill: none;
       stroke: var(--line);
-      stroke-width: 2.2;
+      stroke-width: 1.8;
       marker-end: url(#arrow);
       pointer-events: none;
     }
 
     .edge-low {
       stroke-dasharray: 6 5;
-      stroke-width: 1.8;
     }
 
     .edge-hit {
@@ -237,19 +348,26 @@
       pointer-events: none;
     }
 
+    .anchor {
+      pointer-events: none;
+      fill: #ffffff;
+      stroke: #d7deea;
+      stroke-width: 1.4;
+    }
+
     .edge:hover .edge-tooltip-text {
       opacity: 1;
     }
 
     .edge:hover .edge-path {
-      stroke: #00338d;
+      stroke: var(--line-hover);
       stroke-width: 2.8;
     }
 
     .edge-tooltip-text {
       font: 14px "Cambria Math", Cambria, Georgia, serif;
       font-weight: 800;
-      fill: #00338d;
+      fill: #596579;
     }
 
     .summary-preview {
@@ -402,30 +520,33 @@
 </head>
 <body>
   <header>
-    <h1>{{ title }}</h1>
-    <div class="summary">{{ summary }}</div>
-    <div class="legend" aria-label="Flowchart legend">
-      <span><i class="swatch" style="background: var(--file)"></i>File</span>
-      <span><i class="swatch" style="background: var(--table)"></i>Table</span>
-      <span><i class="swatch" style="background: var(--database)"></i>Database</span>
-      <span><i class="swatch" style="background: var(--python)"></i>Python</span>
-      <span><i class="swatch" style="background: var(--sql)"></i>SQL</span>
-      <span><i class="swatch" style="background: var(--alteryx)"></i>Alteryx</span>
-      <span><i class="swatch" style="background: var(--bat)"></i>BAT</span>
+    <div class="header-top">
+      <div>
+        <h1>{{ title }}</h1>
+        <div class="summary">{{ summary }}</div>
+      </div>
+      <div class="zoom-controls" aria-label="Flowchart zoom controls">
+        <button id="zoomOut" class="zoom-button" type="button" aria-label="Zoom out">-</button>
+        <span id="zoomValue" class="zoom-value">100%</span>
+        <button id="zoomIn" class="zoom-button" type="button" aria-label="Zoom in">+</button>
+        <button id="zoomReset" class="zoom-button" type="button">Reset</button>
+      </div>
     </div>
   </header>
   <main>
-    <section class="canvas" aria-label="Workflow flowchart">
+    <div id="canvasSizer" class="canvas-sizer">
+    <section id="flowchartCanvas" class="canvas" aria-label="Workflow flowchart" data-canvas-width="{{ canvas_width }}" data-canvas-height="{{ canvas_height }}">
       <svg class="edges" viewBox="0 0 {{ canvas_width }} {{ canvas_height }}" aria-hidden="true">
         <defs>
           <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L0,6 L9,3 z" fill="#6d86a3"></path>
+            <path d="M0,0 L0,6 L9,3 z" fill="#f3f5f8"></path>
           </marker>
         </defs>
 {{ edge_svg }}
       </svg>
 {{ node_html }}
     </section>
+    </div>
   </main>
   <div id="summaryPreview" class="summary-preview" aria-hidden="true">
     <div id="summaryPreviewTitle" class="summary-preview-title"></div>
@@ -460,6 +581,23 @@
     const modalStage = document.getElementById("scriptModalStage");
     const modalBody = document.getElementById("scriptModalBody");
     const modalClose = document.getElementById("scriptModalClose");
+    const canvasSizer = document.getElementById("canvasSizer");
+    const flowchartCanvas = document.getElementById("flowchartCanvas");
+    const zoomValue = document.getElementById("zoomValue");
+    const zoomOut = document.getElementById("zoomOut");
+    const zoomIn = document.getElementById("zoomIn");
+    const zoomReset = document.getElementById("zoomReset");
+    const canvasWidth = Number(flowchartCanvas.dataset.canvasWidth);
+    const canvasHeight = Number(flowchartCanvas.dataset.canvasHeight);
+    let zoom = 1;
+
+    function setZoom(nextZoom) {
+      zoom = Math.min(1.6, Math.max(0.45, nextZoom));
+      flowchartCanvas.style.transform = `scale(${zoom})`;
+      canvasSizer.style.width = `${canvasWidth * zoom}px`;
+      canvasSizer.style.height = `${canvasHeight * zoom}px`;
+      zoomValue.textContent = `${Math.round(zoom * 100)}%`;
+    }
 
     function placePreview(event) {
       const margin = 18;
@@ -532,6 +670,11 @@
         closeModal();
       }
     });
+
+    zoomOut.addEventListener("click", () => setZoom(zoom - 0.1));
+    zoomIn.addEventListener("click", () => setZoom(zoom + 0.1));
+    zoomReset.addEventListener("click", () => setZoom(1));
+    setZoom(1);
   </script>
 </body>
 </html>

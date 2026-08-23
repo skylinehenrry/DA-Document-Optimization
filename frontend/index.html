@@ -58,11 +58,38 @@
 
         <label class="field">
           <span>Model</span>
-          <span class="control select-control">
-            <select id="model" name="model">
-              <option value="OpenAI">OpenAI</option>
-              <option value="Ollama">Ollama</option>
-            </select>
+          <span class="model-dropdown" data-model-dropdown>
+            <input id="model" name="model" type="hidden" value="OpenAI">
+            <button
+              id="modelDropdownButton"
+              class="model-dropdown-button"
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+            >
+              <span id="modelDropdownValue">OpenAI</span>
+              <span class="model-dropdown-chevron" aria-hidden="true"></span>
+            </button>
+            <span id="modelDropdownMenu" class="model-dropdown-menu" role="listbox" aria-label="Model">
+              <button
+                class="model-dropdown-option is-selected"
+                type="button"
+                role="option"
+                data-value="OpenAI"
+                aria-selected="true"
+              >
+                OpenAI
+              </button>
+              <button
+                class="model-dropdown-option"
+                type="button"
+                role="option"
+                data-value="Ollama"
+                aria-selected="false"
+              >
+                Ollama
+              </button>
+            </span>
           </span>
         </label>
 
@@ -89,6 +116,17 @@
           </button>
         </div>
       </form>
+    </section>
+
+    <section class="section-block run-log-section" aria-labelledby="run-log-title">
+      <div class="run-log-header">
+        <h2 id="run-log-title">Run Log</h2>
+        <span id="runLogStatus" class="run-log-status">Waiting</span>
+      </div>
+
+      <div id="runLogPanel" class="run-log-panel" aria-live="polite">
+        <div class="run-log-empty">Run messages will appear here after analysis starts.</div>
+      </div>
     </section>
 
     <section class="section-block" aria-labelledby="outputs-title">

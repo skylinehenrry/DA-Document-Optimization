@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 BACKEND_DIR = Path(__file__).parent
 PROMPTS_DIR = BACKEND_DIR / "prompts"
+FLOWCHART_ICON_DIR = BACKEND_DIR / "assets" / "flowchart_icons"
 
 #%%
 """
@@ -31,19 +32,23 @@ def script_folder_exists(script_path: str | Path) -> bool:
     return script_path.is_dir()
 
 
-def list_all_scripts(script_path: str | Path) -> list[str]:
+def list_all_scripts(script_path: str | Path) -> list[Path]:
     script_path = Path(script_path)
     if script_folder_exists(script_path):
         print(f"Looking For Scripts In {script_path}...")
 
-        valid_file_suffixes = [".py", ".sql", ".yxmd", ".yxwz", ".bat"] # Only allow for python, SQL, Alteryx and BAT files
-        valid_file_list = []
-        for file in script_path.iterdir():
-            if file.is_file() and file.suffix in valid_file_suffixes:
-                valid_file_list.append(file)
+        valid_file_suffixes = {".py", ".sql", ".yxmd", ".yxwz", ".bat"} # Only allow for python, SQL, Alteryx and BAT files
+        ignored_folder_names = {"__pycache__", ".git", ".venv", "venv", "env", "node_modules"}
+        valid_file_list = [
+            file
+            for file in script_path.rglob("*")
+            if file.is_file()
+            and file.suffix.lower() in valid_file_suffixes
+            and not any(parent.name in ignored_folder_names for parent in file.parents)
+        ]
 
         for file in valid_file_list:
-            print(file.name)
+            print(file.relative_to(script_path))
         return valid_file_list
 
     else:
@@ -306,6 +311,9 @@ Tools for building objects used for DA Document based on the following objects
 import html
 import re
 from classes import FlowchartSpec, FlowchartNode, FlowchartEdge, FlowchartEdgeKind, FlowchartNodeKind
+
+FLOWCHART_NODE_WIDTH = 300
+FLOWCHART_NODE_HEIGHT = 82
 
 def convert_object_to_json(object: list[ScriptDependencyProfile] | WorkflowDependencyGraph | list[ScriptSummary], 
                            output_path: str | Path) -> None:
@@ -593,13 +601,14 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
     # Build coordinates first, then size the canvas around the resulting layout.
     layer_by_node = calculate_flowchart_layers(flowchart_spec)
     layer_count = max(layer_by_node.values(), default = 0) + 1
-    canvas_width = max(1500, layer_count * 520 + 160)
+    canvas_width = max(1500, layer_count * 560 + 160)
     positions = calculate_flowchart_positions(flowchart_spec, canvas_width = canvas_width)
     node_lookup = {node.id: node for node in flowchart_spec.nodes}
+    anchor_lookup = calculate_flowchart_edge_anchors(flowchart_spec, positions)
 
     max_x = max((position["x"] for position in positions.values()), default = 0)
     max_y = max((position["y"] for position in positions.values()), default = 0)
-    canvas_width = max(canvas_width, max_x + 360)
+    canvas_width = max(canvas_width, max_x + FLOWCHART_NODE_WIDTH + 80)
     canvas_height = max(720, max_y + 180)
 
     # Render cards and arrows separately so cards can sit visually above edges.
@@ -610,7 +619,7 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
     )
 
     edge_svg = "\n".join(
-        build_flowchart_edge_svg(edge, positions, node_lookup)
+        build_flowchart_edge_svg(edge, positions, node_lookup, anchor_lookup)
         for edge in flowchart_spec.edges
         if edge.source in positions and edge.target in positions
     )
@@ -683,24 +692,81 @@ def calculate_flowchart_positions(flowchart_spec: FlowchartSpec,
     layer_count = max(nodes_by_layer.keys(), default = 0) + 1
     left_margin = 48
     right_margin = 48
-    node_width = 230
+    node_width = FLOWCHART_NODE_WIDTH
 
     if layer_count <= 1:
         layer_spacing = 0
     else:
         # Spread layers across the available canvas while keeping a readable gap.
         usable_width = max(canvas_width - left_margin - right_margin - node_width, 360)
-        layer_spacing = max(360, usable_width // (layer_count - 1))
+        layer_spacing = max(400, usable_width // (layer_count - 1))
+
+    outgoing_count = calculate_flowchart_outgoing_counts(flowchart_spec)
 
     for layer, nodes in nodes_by_layer.items():
-        nodes.sort(key = lambda node: (node.stage_order_ID or "", node.kind, node.label))
-        for row, node in enumerate(nodes):
+        nodes.sort(key = lambda node: flowchart_node_position_sort_key(node, outgoing_count))
+
+        y = 58
+        previous_group = None
+        for node in nodes:
+            current_group = 1 if outgoing_count.get(node.id, 0) == 0 else 0
+
+            # Terminal nodes are placed after still-active nodes with a little extra air.
+            if previous_group is not None and current_group != previous_group:
+                y += 42
+
             positions[node.id] = {
                 "x": left_margin + layer * layer_spacing,
-                "y": 70 + row * 138
+                "y": y,
             }
+            y += 136
+            previous_group = current_group
 
     return positions
+
+
+def calculate_flowchart_outgoing_counts(flowchart_spec: FlowchartSpec) -> dict[str, int]:
+    """
+    Helper for identifying terminal nodes in the visual layout.
+    - Counts how many downstream edges each node has
+    - Nodes with zero outgoing edges are likely final outputs or dead ends
+    - The layout uses this to place terminal nodes lower in their layer
+    """
+    outgoing_count = {node.id: 0 for node in flowchart_spec.nodes}
+    node_ids = set(outgoing_count)
+
+    for edge in flowchart_spec.edges:
+        if edge.source in node_ids and edge.target in node_ids:
+            outgoing_count[edge.source] += 1
+
+    return outgoing_count
+
+
+def flowchart_node_position_sort_key(
+    node: FlowchartNode,
+    outgoing_count: dict[str, int],
+) -> tuple[int, int, str, str, str]:
+    """
+    Helper for stable vertical ordering within each layer.
+    - Nodes that continue to later processing stay nearer the top
+    - Terminal outputs or one-off resources move lower
+    - Scripts are kept before data resources when other values are equal
+    """
+    is_terminal = 1 if outgoing_count.get(node.id, 0) == 0 else 0
+    script_priority = 0 if node.kind in {
+        "python_script",
+        "sql_script",
+        "alteryx_workflow",
+        "bat_script",
+    } else 1
+
+    return (
+        is_terminal,
+        script_priority,
+        node.stage_order_ID or "",
+        node.kind,
+        node.label,
+    )
 
 
 def calculate_flowchart_layers(flowchart_spec: FlowchartSpec) -> dict[str, int]:
@@ -751,6 +817,64 @@ def calculate_flowchart_layers(flowchart_spec: FlowchartSpec) -> dict[str, int]:
     return layer_by_node
 
 
+def calculate_flowchart_edge_anchors(
+    flowchart_spec: FlowchartSpec,
+    positions: dict[str, dict[str, int]],
+) -> dict[tuple[str, str, str], dict[str, int]]:
+    """
+    Tool for assigning evenly distributed edge anchor positions.
+    - Incoming anchors sit on the left side of the target card
+    - Outgoing anchors sit on the right side of the source card
+    - Multiple anchors are distributed vertically with equal spacing
+    """
+    outgoing_edges: dict[str, list[FlowchartEdge]] = {}
+    incoming_edges: dict[str, list[FlowchartEdge]] = {}
+
+    for edge in flowchart_spec.edges:
+        if edge.source not in positions or edge.target not in positions:
+            continue
+
+        outgoing_edges.setdefault(edge.source, []).append(edge)
+        incoming_edges.setdefault(edge.target, []).append(edge)
+
+    anchor_lookup: dict[tuple[str, str, str], dict[str, int]] = {}
+
+    for node_id, edges in outgoing_edges.items():
+        edges.sort(key = lambda edge: (positions[edge.target]["y"], edge.target, edge.kind, edge.label or ""))
+        for index, edge in enumerate(edges):
+            anchor_lookup[(edge.source, edge.target, "source")] = {
+                "x": positions[node_id]["x"] + FLOWCHART_NODE_WIDTH,
+                "y": calculate_distributed_anchor_y(positions[node_id]["y"], len(edges), index),
+            }
+
+    for node_id, edges in incoming_edges.items():
+        edges.sort(key = lambda edge: (positions[edge.source]["y"], edge.source, edge.kind, edge.label or ""))
+        for index, edge in enumerate(edges):
+            anchor_lookup[(edge.source, edge.target, "target")] = {
+                "x": positions[node_id]["x"],
+                "y": calculate_distributed_anchor_y(positions[node_id]["y"], len(edges), index),
+            }
+
+    return anchor_lookup
+
+
+def calculate_distributed_anchor_y(node_y: int, anchor_count: int, anchor_index: int) -> int:
+    """
+    Helper for vertical anchor distribution.
+    - A single anchor lands at the vertical center of the card
+    - Multiple anchors use equal spacing between top and bottom padding
+    - This mirrors Excel-style vertical distribution for connector points
+    """
+    if anchor_count <= 1:
+        return node_y + FLOWCHART_NODE_HEIGHT // 2
+
+    top_padding = 16
+    bottom_padding = 16
+    usable_height = FLOWCHART_NODE_HEIGHT - top_padding - bottom_padding
+
+    return int(node_y + top_padding + (usable_height * anchor_index / (anchor_count - 1)))
+
+
 def build_flowchart_node_html(node: FlowchartNode, position: dict[str, int]) -> str:
     """
     Tool for building one HTML card for one FlowchartNode.
@@ -764,8 +888,9 @@ def build_flowchart_node_html(node: FlowchartNode, position: dict[str, int]) -> 
     The HTML card is used for scripts and data resources.
     The CSS class controls the color and visual style.
     """
-    kind_class = f"kind-{node.kind}"
-    icon = node_kind_to_icon_text(node.kind)
+    visual_type = infer_node_visual_type(node)
+    kind_class = f"kind-{node.kind} type-{visual_type}"
+    icon_html = node_visual_type_to_icon_svg(visual_type)
     stage = node.stage_order_ID or node.stage_ID
     stage_html = f'<div class="stage-id">{escape_html(stage)}</div>' if stage else ""
     is_script_node = node.kind in {
@@ -790,9 +915,9 @@ def build_flowchart_node_html(node: FlowchartNode, position: dict[str, int]) -> 
         )
 
     return f"""      <article class="node {kind_class}{script_node_class}" style="left: {position["x"]}px; top: {position["y"]}px;"{script_data_attrs}>
-        <div class="icon">{escape_html(icon)}</div>
+        <div class="icon" aria-hidden="true">{icon_html}</div>
         <div>
-          <div class="node-kind">{escape_html(node.kind.replace("_", " "))}</div>
+          <div class="node-kind">{escape_html(format_node_visual_type(visual_type))}</div>
           <div class="node-label">{escape_html(node.label)}</div>
           <div class="node-subtitle">{escape_html(node.subtitle or "")}</div>
           {stage_html}
@@ -802,7 +927,8 @@ def build_flowchart_node_html(node: FlowchartNode, position: dict[str, int]) -> 
 
 def build_flowchart_edge_svg(edge: FlowchartEdge,
                              positions: dict[str, dict[str, int]],
-                             node_lookup: dict[str, FlowchartNode]) -> str:
+                             node_lookup: dict[str, FlowchartNode],
+                             anchor_lookup: dict[tuple[str, str, str], dict[str, int]]) -> str:
     """
     Tool for building one SVG arrow for one FlowchartEdge.
 
@@ -820,16 +946,19 @@ def build_flowchart_edge_svg(edge: FlowchartEdge,
     """
     source = positions[edge.source]
     target = positions[edge.target]
-    source_x = source["x"] + 230
-    source_y = source["y"] + 46
-    target_x = target["x"]
-    target_y = target["y"] + 46
+    source_anchor = anchor_lookup.get((edge.source, edge.target, "source"))
+    target_anchor = anchor_lookup.get((edge.source, edge.target, "target"))
+
+    source_x = source_anchor["x"] if source_anchor else source["x"] + FLOWCHART_NODE_WIDTH
+    source_y = source_anchor["y"] if source_anchor else source["y"] + FLOWCHART_NODE_HEIGHT // 2
+    target_x = target_anchor["x"] if target_anchor else target["x"]
+    target_y = target_anchor["y"] if target_anchor else target["y"] + FLOWCHART_NODE_HEIGHT // 2
 
     if target_x <= source_x:
         # Same-layer or backward edges need a different route to avoid card overlap.
-        source_x = source["x"] + 115
-        source_y = source["y"] + 92
-        target_x = target["x"] + 115
+        source_x = source["x"] + FLOWCHART_NODE_WIDTH // 2
+        source_y = source["y"] + FLOWCHART_NODE_HEIGHT
+        target_x = target["x"] + FLOWCHART_NODE_WIDTH // 2
         target_y = target["y"]
         mid_y = source_y + max(36, (target_y - source_y) // 2)
         path = f"M{source_x} {source_y} L{source_x} {mid_y} L{target_x} {mid_y} L{target_x} {target_y}"
@@ -853,6 +982,8 @@ def build_flowchart_edge_svg(edge: FlowchartEdge,
     return f"""        <g class="edge">
           <path class="{edge_class}" d="{path}"></path>
           <path class="edge-hit" d="{path}"></path>
+          <circle class="anchor" cx="{source_x}" cy="{source_y}" r="3"></circle>
+          <circle class="anchor" cx="{target_x}" cy="{target_y}" r="3"></circle>
           <text class="edge-tooltip-text" x="{label_x}" y="{label_y}" text-anchor="middle">{label}</text>
         </g>"""
 
@@ -860,33 +991,133 @@ def build_flowchart_edge_svg(edge: FlowchartEdge,
 def format_edge_label(value: str) -> str:
     """
     Helper for formatting relationship labels for display.
+    - reads / writes -> Data Flow
     - code_dependency -> Code Dependency
-    - reads -> Reads
-    - writes -> Writes
+    - execution_dependency -> Execution Dependency
     """
+    label_mapping = {
+        "reads": "Data Flow",
+        "writes": "Data Flow",
+        "read": "Data Flow",
+        "write": "Data Flow",
+    }
+
+    if value in label_mapping:
+        return label_mapping[value]
+
     return value.replace("_", " ").title()
 
 
-def node_kind_to_icon_text(kind: FlowchartNodeKind) -> str:
+def infer_node_visual_type(node: FlowchartNode) -> str:
+    """
+    Helper for selecting the visual card type.
+    - Script nodes use their script kind
+    - File nodes use their filename extension when available
+    - Database, table, API, and unknown nodes keep their semantic kind
+    """
+    if node.kind == "python_script":
+        return "python"
+    if node.kind == "sql_script":
+        return "sql"
+    if node.kind == "alteryx_workflow":
+        return "alteryx"
+    if node.kind == "bat_script":
+        return "bat"
+    if node.kind in {"table", "database", "api"}:
+        return node.kind
+
+    label = node.label.lower()
+    suffix = Path(label).suffix.lower()
+
+    extension_mapping = {
+        ".py": "python",
+        ".sql": "sql",
+        ".yxmd": "alteryx",
+        ".yxwz": "alteryx",
+        ".bat": "bat",
+        ".cmd": "bat",
+        ".md": "markdown",
+        ".json": "json",
+        ".csv": "csv",
+        ".tsv": "csv",
+        ".xlsx": "excel",
+        ".xls": "excel",
+        ".xlsm": "excel",
+        ".html": "html",
+        ".htm": "html",
+        ".log": "log",
+    }
+
+    return extension_mapping.get(suffix, "file")
+
+
+def format_node_visual_type(visual_type: str) -> str:
+    """
+    Helper for card type display text.
+    - Keeps labels concise and readable
+    - Avoids exposing internal enum names such as python_script
+    """
+    display_mapping = {
+        "python": "Python",
+        "sql": "SQL",
+        "alteryx": "Alteryx",
+        "bat": "BAT",
+        "markdown": "Markdown",
+        "json": "JSON",
+        "csv": "CSV / TSV",
+        "excel": "Excel",
+        "database": "Database",
+        "table": "Table",
+        "html": "HTML",
+        "log": "Log",
+        "file": "File",
+        "api": "API",
+        "unknown": "Unknown",
+    }
+    return display_mapping.get(visual_type, visual_type.replace("_", " ").title())
+
+
+def node_visual_type_to_icon_text(visual_type: str) -> str:
     """
     Helper for selecting the short text shown inside each node icon.
-    - python_script -> PY
-    - sql_script -> SQL
-    - file -> FILE
-    - database -> DB
+    - Uses compact glyph-like text for deterministic HTML output
+    - CSS applies the pastel chip and accent color
+    - File extensions refine generic file nodes into markdown / json / html / etc.
     """
     mapping = {
-        "file": "FILE",
-        "table": "TBL",
+        "python": "PY",
+        "sql": "SQL",
+        "alteryx": "a",
+        "bat": ">_",
+        "markdown": "MD",
+        "json": "{}",
+        "csv": "CSV",
+        "excel": "X",
         "database": "DB",
+        "table": "TBL",
+        "html": "</>",
+        "log": "LOG",
+        "file": "FILE",
+        "folder": "DIR",
         "api": "API",
-        "python_script": "PY",
-        "sql_script": "SQL",
-        "alteryx_workflow": "AX",
-        "bat_script": "BAT",
         "unknown": "?"
     }
-    return mapping.get(kind, "?")
+    return mapping.get(visual_type, "?")
+
+
+def node_visual_type_to_icon_svg(visual_type: str) -> str:
+    """
+    Helper for selecting the SVG shown inside each node icon.
+    - Uses inline SVG so the final HTML stays standalone
+    - Keeps each icon centered inside the pastel card chip
+    - Reuses CSS currentColor so each file type controls its own accent color
+    """
+    icon_path = FLOWCHART_ICON_DIR / f"{visual_type}.svg"
+
+    if not icon_path.exists():
+        icon_path = FLOWCHART_ICON_DIR / "file.svg"
+
+    return icon_path.read_text(encoding = "utf-8")
 
 
 def escape_html(value: object) -> str:

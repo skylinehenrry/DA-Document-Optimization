@@ -134,7 +134,7 @@ svg {
 
 .control select {
   appearance: none;
-  padding: 0 50px 0 20px;
+  padding: 0 64px 0 20px;
   cursor: pointer;
 }
 
@@ -175,17 +175,119 @@ svg {
   box-shadow: 0 0 0 4px var(--focus);
 }
 
-.select-control::after {
+.model-dropdown {
+  height: 62px;
+  position: relative;
+  display: block;
+}
+
+.model-dropdown-button {
+  width: 100%;
+  height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background:
+    linear-gradient(90deg, var(--surface) calc(100% - 56px), rgba(0, 76, 255, 0.045) calc(100% - 56px));
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 450;
+  text-align: left;
+  padding: 0 20px;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.model-dropdown-button:hover,
+.model-dropdown-button:focus {
+  border-color: #004cff;
+  box-shadow: 0 0 0 4px var(--focus);
+  outline: 0;
+}
+
+.model-dropdown-button::after {
   content: "";
   position: absolute;
-  right: 22px;
-  top: 50%;
-  width: 9px;
-  height: 9px;
-  border-right: 2px solid #253958;
-  border-bottom: 2px solid #253958;
-  transform: translateY(-70%) rotate(45deg);
-  pointer-events: none;
+  top: 0;
+  right: 56px;
+  width: 1px;
+  height: 100%;
+  background: var(--border);
+}
+
+.model-dropdown-chevron {
+  width: 11px;
+  height: 11px;
+  margin-right: 4px;
+  border-right: 2.2px solid #004cff;
+  border-bottom: 2.2px solid #004cff;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 140ms ease;
+}
+
+.model-dropdown.is-open .model-dropdown-chevron {
+  transform: translateY(3px) rotate(225deg);
+}
+
+.model-dropdown-menu {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: none;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 14px 28px rgba(16, 24, 40, 0.16);
+}
+
+.model-dropdown.is-open .model-dropdown-menu {
+  display: grid;
+  gap: 4px;
+}
+
+.model-dropdown-option {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 620;
+  text-align: left;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.model-dropdown-option.is-selected {
+  background: rgba(0, 76, 255, 0.08);
+  color: #004cff;
+  outline: 0;
+}
+
+.model-dropdown-menu:has(.model-dropdown-option:hover) .model-dropdown-option.is-selected:not(:hover) {
+  background: transparent;
+  color: var(--ink);
+}
+
+.model-dropdown-option:hover,
+.model-dropdown-option:focus {
+  background: #004cff;
+  color: #ffffff;
+  outline: 0;
 }
 
 .small-field input {
@@ -238,6 +340,90 @@ svg {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+.run-log-section {
+  margin-top: 44px;
+}
+
+.run-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-strong);
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+}
+
+.run-log-header h2 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.run-log-status {
+  min-width: 88px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 680;
+  text-align: center;
+}
+
+.run-log-status[data-state="running"] {
+  border-color: rgba(0, 76, 255, 0.28);
+  background: rgba(0, 76, 255, 0.07);
+  color: #004cff;
+}
+
+.run-log-status[data-state="complete"] {
+  border-color: rgba(0, 145, 111, 0.28);
+  background: rgba(0, 145, 111, 0.08);
+  color: #007a5f;
+}
+
+.run-log-status[data-state="error"] {
+  border-color: rgba(218, 41, 28, 0.28);
+  background: rgba(218, 41, 28, 0.08);
+  color: #b42318;
+}
+
+.run-log-panel {
+  height: 184px;
+  overflow: auto;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 254, 0.96));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.run-log-empty,
+.run-log-line {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 520;
+  line-height: 1.55;
+}
+
+.run-log-line + .run-log-line {
+  margin-top: 5px;
+}
+
+.run-log-line::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 10px;
+  border-radius: 999px;
+  background: #004cff;
+  vertical-align: 1px;
 }
 
 .output-grid {
