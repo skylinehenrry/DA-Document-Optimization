@@ -6,6 +6,7 @@
   <title>{{ title }}</title>
   <style>
     :root {
+      /* Theme tokens for the light, minimal flowchart style. */
       --bg: #f8fafd;
       --surface: #ffffff;
       --ink: #0c233c;
@@ -13,7 +14,7 @@
       --border: #d7deea;
       --border-soft: #e6ebf2;
       --line: #f3f5f8;
-      --line-hover: #d8e0ec;
+      --line-hover: #98a2b3;
       --incoming: #e83e8c;
       --outgoing: #2f6bff;
       --python-chip: #eaf2ff;
@@ -105,6 +106,7 @@
     }
 
     .zoom-controls {
+      /* Fixed controls for scaling the canvas without changing the graph data. */
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -141,6 +143,7 @@
     }
 
     main {
+      /* Main owns scrolling, so large charts can exceed the browser viewport. */
       flex: 1 1 auto;
       min-height: 0;
       padding: 18px 22px 22px;
@@ -170,12 +173,14 @@
     }
 
     .canvas-sizer {
+      /* This wrapper grows / shrinks when zoom changes. */
       position: relative;
       width: {{ canvas_width }}px;
       height: {{ canvas_height }}px;
     }
 
     .canvas {
+      /* The actual drawing surface. Python fills in the pixel size. */
       position: relative;
       width: {{ canvas_width }}px;
       height: {{ canvas_height }}px;
@@ -187,6 +192,7 @@
     }
 
     svg.edges {
+      /* SVG lines are drawn under the HTML cards. */
       position: absolute;
       inset: 0;
       width: {{ canvas_width }}px;
@@ -197,6 +203,7 @@
     }
 
     .node {
+      /* Every script / resource card uses the same fixed size for alignment. */
       position: absolute;
       z-index: 3;
       width: 300px;
@@ -227,6 +234,7 @@
     }
 
     .icon {
+      /* Pastel chip behind each reusable SVG icon. */
       width: 52px;
       height: 52px;
       display: grid;
@@ -238,6 +246,7 @@
     }
 
     .icon svg {
+      /* Icons use currentColor, so each file type can set its own accent. */
       width: 31px;
       height: 31px;
       display: block;
@@ -287,9 +296,10 @@
     }
 
     .node-label {
+      /* Card label shows a short filename; the full path remains in title=. */
       margin-top: 3px;
       color: var(--ink);
-      font-size: 15px;
+      font-size: 12px;
       line-height: 1.18;
       font-weight: 760;
       overflow-wrap: anywhere;
@@ -324,6 +334,7 @@
     }
 
     .edge-path {
+      /* Visible connector line. The transparent hit path below handles hover. */
       fill: none;
       stroke: var(--line);
       stroke-width: 1.8;
@@ -336,6 +347,7 @@
     }
 
     .edge-hit {
+      /* Larger invisible target so thin lines are easy to hover. */
       fill: none;
       stroke: transparent;
       stroke-width: 18;
@@ -362,6 +374,14 @@
     .edge:hover .edge-path {
       stroke: var(--line-hover);
       stroke-width: 2.8;
+      marker-end: url(#arrowHover);
+    }
+
+    .edge.is-active .edge-path {
+      /* JavaScript adds this class after moving the hovered edge to the top. */
+      stroke: var(--line-hover);
+      stroke-width: 2.8;
+      marker-end: url(#arrowHover);
     }
 
     .edge-tooltip-text {
@@ -538,8 +558,13 @@
     <section id="flowchartCanvas" class="canvas" aria-label="Workflow flowchart" data-canvas-width="{{ canvas_width }}" data-canvas-height="{{ canvas_height }}">
       <svg class="edges" viewBox="0 0 {{ canvas_width }} {{ canvas_height }}" aria-hidden="true">
         <defs>
+          <!-- Normal and hover markers are separate because SVG marker fill
+               does not automatically inherit the hovered line's stroke color. -->
           <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
             <path d="M0,0 L0,6 L9,3 z" fill="#f3f5f8"></path>
+          </marker>
+          <marker id="arrowHover" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#98a2b3"></path>
           </marker>
         </defs>
 {{ edge_svg }}
@@ -571,6 +596,16 @@
     </section>
   </div>
   <script>
+    /*
+      Browser behavior for the generated flowchart.
+      - Zoom controls scale the canvas after Python has positioned the nodes
+      - Script cards show a small summary on hover
+      - Script cards open a detail modal on click
+      - Edge hover labels appear only when the user points at an edge
+      - Hovered edges are moved to the top of the SVG so they are not hidden
+      - Card hover highlights every edge connected to that card
+    */
+    const allNodes = document.querySelectorAll(".node");
     const scriptNodes = document.querySelectorAll(".script-node");
     const preview = document.getElementById("summaryPreview");
     const previewTitle = document.getElementById("summaryPreviewTitle");
@@ -587,11 +622,18 @@
     const zoomOut = document.getElementById("zoomOut");
     const zoomIn = document.getElementById("zoomIn");
     const zoomReset = document.getElementById("zoomReset");
+    const edgeGroups = document.querySelectorAll(".edge");
     const canvasWidth = Number(flowchartCanvas.dataset.canvasWidth);
     const canvasHeight = Number(flowchartCanvas.dataset.canvasHeight);
     let zoom = 1;
 
     function setZoom(nextZoom) {
+      /*
+        Tool for changing flowchart scale.
+        - Clamp zoom to a readable range
+        - Scale the canvas using CSS transform
+        - Resize the wrapper so browser scrollbars match the scaled size
+      */
       zoom = Math.min(1.6, Math.max(0.45, nextZoom));
       flowchartCanvas.style.transform = `scale(${zoom})`;
       canvasSizer.style.width = `${canvasWidth * zoom}px`;
@@ -600,6 +642,12 @@
     }
 
     function placePreview(event) {
+      /*
+        Tool for positioning the hover summary.
+        - Start near the mouse pointer
+        - Flip left / upward when near the browser edge
+        - Keep the preview inside the visible viewport
+      */
       const margin = 18;
       const previewWidth = preview.offsetWidth || 360;
       const previewHeight = preview.offsetHeight || 160;
@@ -619,6 +667,11 @@
     }
 
     function showPreview(event) {
+      /*
+        Tool for displaying high-level script summary.
+        - Reads summary text from the script card's data attributes
+        - Positions the floating preview near the cursor
+      */
       const highLevelSummary = event.currentTarget.dataset.highLevelSummary;
       if (!highLevelSummary) return;
 
@@ -630,11 +683,18 @@
     }
 
     function hidePreview() {
+      /* Hide the floating hover summary when the mouse leaves a script card. */
       preview.classList.remove("is-visible");
       preview.setAttribute("aria-hidden", "true");
     }
 
     function openModal(node) {
+      /*
+        Tool for showing detailed script summary.
+        - Reads detailed summary from the clicked card
+        - Updates modal title / metadata / body
+        - Makes the modal visible on top of the chart
+      */
       modalTitle.textContent = node.dataset.scriptName || "Script Summary";
       modalType.textContent = node.dataset.scriptType || "Script";
       modalStage.textContent = node.dataset.stageOrderId || "No Stage ID";
@@ -644,10 +704,43 @@
     }
 
     function closeModal() {
+      /* Hide the detailed script summary modal. */
       modalBackdrop.classList.remove("is-visible");
       modalBackdrop.setAttribute("aria-hidden", "true");
     }
 
+    function setConnectedEdgesActive(node, isActive) {
+      /*
+        Tool for tracing card relationships.
+        - Reads the hovered card's node ID
+        - Finds every edge where this node is source or target
+        - Adds the active style so connected lines and arrow tips stand out
+        - Moves active edges to the top of the SVG drawing order
+      */
+      const nodeId = node.dataset.nodeId;
+      if (!nodeId) return;
+
+      edgeGroups.forEach((edge) => {
+        const isConnected = edge.dataset.source === nodeId || edge.dataset.target === nodeId;
+        if (!isConnected) return;
+
+        edge.classList.toggle("is-active", isActive);
+
+        if (isActive) {
+          edge.parentElement.appendChild(edge);
+        }
+      });
+    }
+
+    // Bind all card interactions.
+    // Hovering any script or data card highlights every connected edge.
+    allNodes.forEach((node) => {
+      node.addEventListener("mouseenter", () => setConnectedEdgesActive(node, true));
+      node.addEventListener("mouseleave", () => setConnectedEdgesActive(node, false));
+    });
+
+    // Bind script card interactions.
+    // Hover = quick summary; click = detailed summary.
     scriptNodes.forEach((node) => {
       node.addEventListener("mouseenter", showPreview);
       node.addEventListener("mousemove", placePreview);
@@ -658,6 +751,20 @@
       });
     });
 
+    // Bind edge interactions.
+    // SVG renders later elements on top, so appendChild(edge) brings the
+    // hovered connector above neighboring connector lines.
+    edgeGroups.forEach((edge) => {
+      edge.addEventListener("mouseenter", () => {
+        edge.parentElement.appendChild(edge);
+        edge.classList.add("is-active");
+      });
+      edge.addEventListener("mouseleave", () => {
+        edge.classList.remove("is-active");
+      });
+    });
+
+    // Close the modal through button, backdrop click, or Escape key.
     modalClose.addEventListener("click", closeModal);
     modalBackdrop.addEventListener("click", (event) => {
       if (event.target === modalBackdrop) {
@@ -671,6 +778,7 @@
       }
     });
 
+    // Wire up zoom controls after all elements are available.
     zoomOut.addEventListener("click", () => setZoom(zoom - 0.1));
     zoomIn.addEventListener("click", () => setZoom(zoom + 0.1));
     zoomReset.addEventListener("click", () => setZoom(1));

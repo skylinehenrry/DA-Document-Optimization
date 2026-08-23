@@ -48,6 +48,7 @@ def save_json_outputs(
     profiles: list[ScriptDependencyProfile],
     workflow_network: WorkflowDependencyGraph,
     summaries: list[ScriptSummary],
+    logger: Callable[[str], None] | None = None,
 ) -> None:
     """
     Save the main workflow objects as JSON files.
@@ -55,6 +56,10 @@ def save_json_outputs(
     - workflow_network.json contains script-to-script workflow reasoning
     - summaries.json contains per-script high-level and detailed summaries
     """
+    def log(message: str) -> None:
+        if logger is not None:
+            logger(message)
+
     output_dir.mkdir(parents = True, exist_ok = True)
 
     (output_dir / "profiles.json").write_text(
@@ -65,11 +70,13 @@ def save_json_outputs(
         ),
         encoding = "utf-8",
     )
+    log("Saved profiles.json.")
 
     (output_dir / "workflow_network.json").write_text(
         workflow_network.model_dump_json(indent = 2),
         encoding = "utf-8",
     )
+    log("Saved workflow_network.json.")
 
     (output_dir / "summaries.json").write_text(
         json.dumps(
@@ -79,6 +86,7 @@ def save_json_outputs(
         ),
         encoding = "utf-8",
     )
+    log("Saved summaries.json.")
 
 
 def save_flowchart_outputs(
@@ -86,6 +94,7 @@ def save_flowchart_outputs(
     workflow_network: WorkflowDependencyGraph,
     profiles: list[ScriptDependencyProfile],
     summaries: list[ScriptSummary],
+    logger: Callable[[str], None] | None = None,
 ) -> None:
     """
     Build and save the visual workflow flowchart outputs.
@@ -93,6 +102,11 @@ def save_flowchart_outputs(
     - workflow_flowchart.html is the human-friendly visual report
     - Both files are saved into the selected DA Document folder
     """
+    def log(message: str) -> None:
+        if logger is not None:
+            logger(message)
+
+    log("Building flowchart specification.")
     flowchart_spec = construct_flowchart_spec(
         workflow_graph = workflow_network,
         profiles = profiles,
@@ -103,11 +117,14 @@ def save_flowchart_outputs(
         flowchart_spec.model_dump_json(indent = 2),
         encoding = "utf-8",
     )
+    log("Saved flowchart_spec.json.")
 
+    log("Rendering workflow_flowchart.html.")
     render_flowchart_html(
         flowchart_spec = flowchart_spec,
         output_path = output_dir / "workflow_flowchart.html",
     )
+    log("Saved workflow_flowchart.html.")
 
 
 async def run_da_document_workflow(
@@ -126,6 +143,9 @@ async def run_da_document_workflow(
     - max_concurrency controls how many LLM calls can run at once
     """
     def log(message: str) -> None:
+        # The logger is provided by either the frontend API or the CLI entry point.
+        # Keeping this as the single progress channel makes browser logs and
+        # console output show the same workflow status.
         if logger is not None:
             logger(message)
 
@@ -135,13 +155,19 @@ async def run_da_document_workflow(
     output_root = Path(da_document_folder).expanduser()
     output_dir = output_root / "outputs"
 
+    log(f"Script folder received: {script_folder}")
+    log(f"DA Document folder received: {output_root}")
+    log(f"Model selected: {model}")
+    log(f"Max concurrency selected: {max_concurrency}")
+
+    log("Validating script folder.")
     if not script_folder.is_dir():
         raise FileNotFoundError(f"Script folder does not exist: {script_folder}")
 
     output_dir.mkdir(parents = True, exist_ok = True)
     log(f"Output folder ready: {output_dir}")
 
-    valid_file_list = list_all_scripts(script_path = script_folder)
+    valid_file_list = list_all_scripts(script_path = script_folder, logger = log)
     log(f"Found {len(valid_file_list)} supported script file(s).")
 
     if not valid_file_list:
@@ -155,6 +181,7 @@ async def run_da_document_workflow(
         valid_file_list = valid_file_list,
         chains = dependency_chains,
         max_concurrent_files = max_concurrency,
+        logger = log,
     )
     log("Dependency profile extraction complete.")
 
@@ -164,6 +191,7 @@ async def run_da_document_workflow(
         construct_dependency_network,
         profiles,
         model,
+        log,
     )
     log("Workflow dependency network complete.")
 
@@ -174,6 +202,7 @@ async def run_da_document_workflow(
         workflow_graph = workflow_network,
         model = model,
         max_concurrent_files = max_concurrency,
+        logger = log,
     )
     log("Script summary generation complete.")
 
@@ -183,6 +212,7 @@ async def run_da_document_workflow(
         profiles = profiles,
         workflow_network = workflow_network,
         summaries = summaries,
+        logger = log,
     )
 
     log("Rendering workflow flowchart.")
@@ -191,6 +221,7 @@ async def run_da_document_workflow(
         workflow_network = workflow_network,
         profiles = profiles,
         summaries = summaries,
+        logger = log,
     )
     log("Analysis complete. Outputs are ready.")
 

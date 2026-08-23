@@ -179,7 +179,12 @@ def add_run_log(message: str) -> None:
     - Mirrors the kind of progress previously visible only in Terminal
     """
     timestamp = datetime.now().strftime("%H:%M:%S")
-    run_logs.append(f"{timestamp} - {message}")
+    log_message = f"{timestamp} - {message}"
+
+    # Store for the browser Run Log panel and print for the launcher console.
+    # This keeps both places aligned without maintaining two logging systems.
+    run_logs.append(log_message)
+    print(log_message, flush = True)
 
 
 @app.on_event("startup")

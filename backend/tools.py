@@ -14,7 +14,7 @@ from langchain_core.documents import Document
 
 
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 from pydantic import BaseModel
 
 BACKEND_DIR = Path(__file__).parent
@@ -32,10 +32,21 @@ def script_folder_exists(script_path: str | Path) -> bool:
     return script_path.is_dir()
 
 
-def list_all_scripts(script_path: str | Path) -> list[Path]:
+def list_all_scripts(script_path: str | Path,
+                     logger: Callable[[str], None] | None = None) -> list[Path]:
+    """
+    Find supported scripts in the selected folder.
+    - Searches nested folders with rglob
+    - Ignores common generated / environment folders
+    - Reports discovered files through logger when provided
+    """
+    def log(message: str) -> None:
+        if logger is not None:
+            logger(message)
+
     script_path = Path(script_path)
     if script_folder_exists(script_path):
-        print(f"Looking For Scripts In {script_path}...")
+        log(f"Scanning scripts recursively in: {script_path}")
 
         valid_file_suffixes = {".py", ".sql", ".yxmd", ".yxwz", ".bat"} # Only allow for python, SQL, Alteryx and BAT files
         ignored_folder_names = {"__pycache__", ".git", ".venv", "venv", "env", "node_modules"}
@@ -48,7 +59,7 @@ def list_all_scripts(script_path: str | Path) -> list[Path]:
         ]
 
         for file in valid_file_list:
-            print(file.relative_to(script_path))
+            log(f"Found script: {file.relative_to(script_path)}")
         return valid_file_list
 
     else:
@@ -122,7 +133,8 @@ def create_dependency_chains(model: Literal["OpenAI", "Ollama"]) -> DependencyEx
 
 async def extract_dependencies_for_file(file: Path,
                                         chains: dict,
-                                        semaphore: asyncio.Semaphore) -> ScriptDependencyProfile:
+                                        semaphore: asyncio.Semaphore,
+                                        logger: Callable[[str], None] | None = None) -> ScriptDependencyProfile:
     """
     For each file passed in, pass the content of the file to LLM and buidl a ScriptDependencyProfile object that contains the following information:
         - script name
@@ -132,13 +144,17 @@ async def extract_dependencies_for_file(file: Path,
         - list of input data
         - list of output data
     """
-    print(f"Extracting dependency for {file.name}...")
+    def log(message: str) -> None:
+        if logger is not None:
+            logger(message)
+
+    log(f"Extracting dependency profile: {file.name}")
     document = TextLoader(file_path = str(file), encoding = "utf-8", autodetect_encoding = True).load()[0]
     payload = {"script_content": document.page_content}
     import_result, input_data_result, output_data_result = await asyncio.gather(
-        invoke_dependency_chain(chains["imports"], payload, semaphore, f"{file.name}: imports"),
-        invoke_dependency_chain(chains["input data"], payload, semaphore, f"{file.name}: input data"),
-        invoke_dependency_chain(chains["output data"], payload, semaphore, f"{file.name}: output data")
+        invoke_dependency_chain(chains["imports"], payload, semaphore, f"{file.name}: imports", logger = logger),
+        invoke_dependency_chain(chains["input data"], payload, semaphore, f"{file.name}: input data", logger = logger),
+        invoke_dependency_chain(chains["output data"], payload, semaphore, f"{file.name}: output data", logger = logger)
     )
 
     profile = ScriptDependencyProfile(file_name = file.name,
@@ -153,6 +169,7 @@ async def extract_dependencies_for_file(file: Path,
     profile.unclear_items.extend(input_data_result.unclear_items)
     profile.unclear_items.extend(output_data_result.unclear_items)
 
+    log(f"Finished dependency profile: {file.name}")
     return profile
 
 
@@ -160,38 +177,57 @@ async def invoke_dependency_chain(chain,
                                   payload: dict,
                                   semaphore: asyncio.Semaphore,
                                   task_name: str,
+                                  logger: Callable[[str], None] | None = None,
                                   max_attempts: int = 3) -> DependencyExtraction:
     """
     Invoke one dependency extraction chain with retry handling.
     Local Ollama models may occasionally return malformed or empty structured output,
     especially under concurrent load.
     """
+    def log(message: str) -> None:
+        if logger is not None:
+            logger(message)
+
     for attempt in range(1, max_attempts + 1):
         try:
             async with semaphore:
-                return await chain.ainvoke(payload)
+                log(f"Running extraction task: {task_name}")
+                result = await chain.ainvoke(payload)
+                log(f"Finished extraction task: {task_name}")
+                return result
         except Exception as error:
             if attempt == max_attempts:
+                log(f"Extraction task failed: {task_name}")
                 return DependencyExtraction(
                     unclear_items = [
                         f"{task_name} failed after {max_attempts} attempts: {error}"
                     ]
                 )
+            log(f"Retrying extraction task: {task_name} (attempt {attempt + 1} of {max_attempts})")
             await asyncio.sleep(attempt)
 
 
 async def extract_dependencies_for_folder(valid_file_list: list[Path],
                                           chains: dict,
-                                          max_concurrent_files: int = 1):
+                                          max_concurrent_files: int = 1,
+                                          logger: Callable[[str], None] | None = None):
     """
     Batch execution for extract_dependencies_for_file, with asynchronus implementation for processing efficiency
     """
+    def log(message: str) -> None:
+        if logger is not None:
+            logger(message)
+
+    log(f"Starting dependency extraction for {len(valid_file_list)} file(s).")
     semaphore = asyncio.Semaphore(max_concurrent_files)
     tasks = [extract_dependencies_for_file(file = file, 
                                         chains = chains,
-                                        semaphore = semaphore) for file in valid_file_list]
+                                        semaphore = semaphore,
+                                        logger = logger) for file in valid_file_list]
 
-    return await asyncio.gather(*tasks)
+    profiles = await asyncio.gather(*tasks)
+    log(f"Completed dependency extraction for {len(profiles)} file(s).")
+    return profiles
 
 
 #%%
@@ -209,15 +245,21 @@ def profiles_to_json(profiles: list[ScriptDependencyProfile]) -> str:
 
 
 def construct_dependency_network(profiles: list[ScriptDependencyProfile], 
-                                 model: Literal["OpenAI", "Ollama"] = "OpenAI") -> WorkflowDependencyGraph:
+                                 model: Literal["OpenAI", "Ollama"] = "OpenAI",
+                                 logger: Callable[[str], None] | None = None) -> WorkflowDependencyGraph:
 
-    print(f"Constructing dependency network for the program...")
+    def log(message: str) -> None:
+        if logger is not None:
+            logger(message)
+
+    log("Calling LLM to construct workflow dependency network.")
     LLM = set_up_LLM(model = model)
     
     workflow_prompt = ChatPromptTemplate.from_template((PROMPTS_DIR / "prompt_construct_dependency_network.md").read_text(encoding = "utf-8"))
     workflow_chain = workflow_prompt | LLM.with_structured_output(schema = WorkflowDependencyGraph)
     workflow_graph = workflow_chain.invoke({"script_dependency_profiles": profiles_to_json(profiles)})
     
+    log(f"Workflow dependency network contains {len(workflow_graph.nodes)} node(s) and {len(workflow_graph.edges)} edge(s).")
     return workflow_graph
 
 
@@ -248,9 +290,14 @@ async def generate_summary_for_file(file: Path,
                                     script_profile: ScriptDependencyProfile, 
                                     workflow_graph: WorkflowDependencyGraph,
                                     semaphore: asyncio.Semaphore,
-                                    summary_chain) -> ScriptSummary:
+                                    summary_chain,
+                                    logger: Callable[[str], None] | None = None) -> ScriptSummary:
 
-    print(f"Generating summary for {file.name}...")
+    def log(message: str) -> None:
+        if logger is not None:
+            logger(message)
+
+    log(f"Generating script summary: {file.name}")
     # Basic information of file, can be retrieved directly from path info
     script_name = file.name
     script_path = str(file)
@@ -273,15 +320,29 @@ async def generate_summary_for_file(file: Path,
                "workflow_dependency_graph": object_to_json(workflow_graph)}
 
     async with semaphore:
-        return await summary_chain.ainvoke(payload)
+        summary = await summary_chain.ainvoke(payload)
+
+    log(f"Finished script summary: {file.name}")
+    return summary
 
 
 async def generate_summary_for_folder(valid_file_list: list[Path], 
                                       dependency_profiles: list[ScriptDependencyProfile],
                                       workflow_graph: WorkflowDependencyGraph,
                                       model: Literal["OpenAI", "Ollama"] = "OpenAI",
-                                      max_concurrent_files: int = 10) -> list[ScriptSummary]:
+                                      max_concurrent_files: int = 10,
+                                      logger: Callable[[str], None] | None = None) -> list[ScriptSummary]:
+    """
+    Generate ScriptSummary objects for all supported scripts.
+    - Uses the workflow graph to fill stage / order information
+    - Uses dependency profiles to provide context for each script
+    - Reports per-file progress through the shared logger
+    """
+    def log(message: str) -> None:
+        if logger is not None:
+            logger(message)
     
+    log(f"Setting up summary chain for {len(valid_file_list)} file(s).")
     LLM = set_up_LLM(model = model)
     summary_prompt = ChatPromptTemplate.from_template((PROMPTS_DIR / "prompt_generate_script_summary.md").read_text(encoding = "utf-8"))
     summary_chain = summary_prompt | LLM.with_structured_output(schema = ScriptSummary) # Script Summary class can be found in classes.py
@@ -295,10 +356,13 @@ async def generate_summary_for_folder(valid_file_list: list[Path],
         profile = profile_by_path.get(str(file))
 
         if profile is None:
-            pass # to be defined later
-        tasks.append(generate_summary_for_file(file, profile, workflow_graph, semaphore, summary_chain))
+            log(f"Skipping summary because dependency profile is missing: {file.name}")
+            continue
+        tasks.append(generate_summary_for_file(file, profile, workflow_graph, semaphore, summary_chain, logger = logger))
 
-    return await asyncio.gather(*tasks)
+    summaries = await asyncio.gather(*tasks)
+    log(f"Completed script summaries for {len(summaries)} file(s).")
+    return summaries
 
 
 #%%
@@ -426,11 +490,16 @@ def construct_flowchart_spec(
     Return a FlowchartSpec object that can be reviewed, edited, and passed to
     render_flowchart_html for standardized HTML output.
     """
+    # This object is the bridge between analysis output and visual output.
+    # The HTML renderer should not need to know about ScriptDependencyProfile
+    # or WorkflowDependencyGraph directly.
     spec = FlowchartSpec(
         title="Workflow Flowchart",
         summary=workflow_graph.workflow_summary,
     )
 
+    # These sets keep the visual graph tidy when the same file or relationship
+    # is discovered more than once by different extraction steps.
     created_node_ids: set[str] = set()
     created_edge_keys: set[tuple[str, str, str, str | None]] = set()
 
@@ -447,6 +516,8 @@ def construct_flowchart_spec(
             spec.edges.append(edge)
             created_edge_keys.add(key)
 
+    # Build lookup tables so summaries can be attached even when one object
+    # identifies scripts by filename and another identifies them by full path.
     summary_by_name = {
         summary.script_name: summary
         for summary in summaries or []
@@ -457,13 +528,16 @@ def construct_flowchart_spec(
         for summary in summaries or []
     }
 
-    # Add script nodes from workflow graph
+    # Add script nodes from workflow graph.
+    # These nodes are the main processing steps shown in the flowchart.
     for node in workflow_graph.nodes:
         script_summary = summary_by_path.get(node.script_path)
 
         if script_summary is None:
             script_summary = summary_by_name.get(node.script_name)
 
+        # Details are not all printed directly on the card.
+        # Some are used by hover/click interactions in the generated HTML.
         details = {
             "script_path": node.script_path,
             "script_type": node.script_type,
@@ -495,6 +569,8 @@ def construct_flowchart_spec(
             )
         )
 
+    # Profiles usually describe a script by file path / file name.
+    # These maps let us connect each profile back to its script node.
     script_node_by_path = {
         node.script_path: node.id
         for node in workflow_graph.nodes
@@ -505,7 +581,9 @@ def construct_flowchart_spec(
         for node in workflow_graph.nodes
     }
 
-    # Add data nodes and read/write edges from dependency profiles
+    # Add data nodes and read/write edges from dependency profiles.
+    # This is how files, tables, databases, and similar resources appear
+    # together with scripts in the final flowchart.
     for profile in profiles:
         script_node_id = script_node_by_path.get(profile.file_path)
 
@@ -522,6 +600,7 @@ def construct_flowchart_spec(
             resource_type = dependency.target.type
             resource_name = dependency.target.name
 
+            # One data resource becomes one card, even if multiple scripts use it.
             data_node_id = make_data_node_id(resource_type, resource_name)
 
             add_node(
@@ -538,6 +617,8 @@ def construct_flowchart_spec(
                 )
             )
 
+            # Reads point from data resource -> script.
+            # Writes point from script -> data resource.
             if dependency.relationship == "reads":
                 source = data_node_id
                 target = script_node_id
@@ -558,7 +639,8 @@ def construct_flowchart_spec(
                 )
             )
 
-    # Add script-to-script edges from workflow graph
+    # Add script-to-script edges from workflow graph.
+    # These show code dependency / execution dependency between scripts.
     for edge in workflow_graph.edges:
         add_edge(
             FlowchartEdge(
@@ -599,6 +681,7 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
     output_path.parent.mkdir(exist_ok = True)
 
     # Build coordinates first, then size the canvas around the resulting layout.
+    # The first width estimate gives the layout enough room to spread layers.
     layer_by_node = calculate_flowchart_layers(flowchart_spec)
     layer_count = max(layer_by_node.values(), default = 0) + 1
     canvas_width = max(1500, layer_count * 560 + 160)
@@ -606,12 +689,15 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
     node_lookup = {node.id: node for node in flowchart_spec.nodes}
     anchor_lookup = calculate_flowchart_edge_anchors(flowchart_spec, positions)
 
+    # After positions are known, resize the canvas to include every card.
+    # This prevents cards from being clipped and allows browser scrollbars.
     max_x = max((position["x"] for position in positions.values()), default = 0)
     max_y = max((position["y"] for position in positions.values()), default = 0)
     canvas_width = max(canvas_width, max_x + FLOWCHART_NODE_WIDTH + 80)
     canvas_height = max(720, max_y + 180)
 
-    # Render cards and arrows separately so cards can sit visually above edges.
+    # Render cards and arrows separately.
+    # SVG edges are drawn first; HTML cards sit above them visually.
     node_html = "\n".join(
         build_flowchart_node_html(node, positions[node.id])
         for node in flowchart_spec.nodes
@@ -627,6 +713,8 @@ def render_flowchart_html(flowchart_spec: FlowchartSpec, output_path: str | Path
     title = escape_html(flowchart_spec.title)
     summary = escape_html(flowchart_spec.summary or "")
 
+    # Keep the long HTML / CSS / JavaScript in a template file so the Python
+    # code stays focused on data preparation and layout.
     template_path = Path(__file__).parent / "templates" / "workflow_flowchart.html"
     template = template_path.read_text(encoding = "utf-8")
 
@@ -701,9 +789,13 @@ def calculate_flowchart_positions(flowchart_spec: FlowchartSpec,
         usable_width = max(canvas_width - left_margin - right_margin - node_width, 360)
         layer_spacing = max(400, usable_width // (layer_count - 1))
 
+    # Terminal nodes are resources or scripts that do not feed anything else.
+    # We push them lower so important processing paths remain easier to follow.
     outgoing_count = calculate_flowchart_outgoing_counts(flowchart_spec)
 
     for layer, nodes in nodes_by_layer.items():
+        # Sorting is deterministic, so the same graph produces the same layout
+        # across reruns unless the underlying graph changes.
         nodes.sort(key = lambda node: flowchart_node_position_sort_key(node, outgoing_count))
 
         y = 58
@@ -719,6 +811,7 @@ def calculate_flowchart_positions(flowchart_spec: FlowchartSpec,
                 "x": left_margin + layer * layer_spacing,
                 "y": y,
             }
+            # Vertical gap between cards in the same layer.
             y += 136
             previous_group = current_group
 
@@ -796,6 +889,7 @@ def calculate_flowchart_layers(flowchart_spec: FlowchartSpec) -> dict[str, int]:
         outgoing[edge.source].append(edge.target)
         incoming_count[edge.target] += 1
 
+    # Nodes with no incoming edges can start at the left-most layer.
     ready = sorted([node_id for node_id, count in incoming_count.items() if count == 0])
     layer_by_node = {node_id: 0 for node_id in ready}
 
@@ -811,6 +905,8 @@ def calculate_flowchart_layers(flowchart_spec: FlowchartSpec) -> dict[str, int]:
                 ready.append(target)
                 ready.sort()
 
+    # Cycles or disconnected nodes may not be reached by the traversal.
+    # Put them in layer 0 rather than dropping them from the chart.
     for node_id in sorted(node_ids):
         layer_by_node.setdefault(node_id, 0)
 
@@ -834,12 +930,16 @@ def calculate_flowchart_edge_anchors(
         if edge.source not in positions or edge.target not in positions:
             continue
 
+        # Source-side anchors are distributed across the right side of a card.
         outgoing_edges.setdefault(edge.source, []).append(edge)
+
+        # Target-side anchors are distributed across the left side of a card.
         incoming_edges.setdefault(edge.target, []).append(edge)
 
     anchor_lookup: dict[tuple[str, str, str], dict[str, int]] = {}
 
     for node_id, edges in outgoing_edges.items():
+        # Sort by target location so nearby edges receive nearby anchors.
         edges.sort(key = lambda edge: (positions[edge.target]["y"], edge.target, edge.kind, edge.label or ""))
         for index, edge in enumerate(edges):
             anchor_lookup[(edge.source, edge.target, "source")] = {
@@ -848,6 +948,7 @@ def calculate_flowchart_edge_anchors(
             }
 
     for node_id, edges in incoming_edges.items():
+        # Sort by source location so incoming edges do not cross more than needed.
         edges.sort(key = lambda edge: (positions[edge.source]["y"], edge.source, edge.kind, edge.label or ""))
         for index, edge in enumerate(edges):
             anchor_lookup[(edge.source, edge.target, "target")] = {
@@ -872,6 +973,7 @@ def calculate_distributed_anchor_y(node_y: int, anchor_count: int, anchor_index:
     bottom_padding = 16
     usable_height = FLOWCHART_NODE_HEIGHT - top_padding - bottom_padding
 
+    # Example for 3 anchors: top, middle, bottom within the padded card area.
     return int(node_y + top_padding + (usable_height * anchor_index / (anchor_count - 1)))
 
 
@@ -891,6 +993,10 @@ def build_flowchart_node_html(node: FlowchartNode, position: dict[str, int]) -> 
     visual_type = infer_node_visual_type(node)
     kind_class = f"kind-{node.kind} type-{visual_type}"
     icon_html = node_visual_type_to_icon_svg(visual_type)
+
+    # The card shows only the filename, but keeps the full original label in
+    # the title attribute so the user can still inspect the full path.
+    display_label = format_flowchart_node_display_label(node)
     stage = node.stage_order_ID or node.stage_ID
     stage_html = f'<div class="stage-id">{escape_html(stage)}</div>' if stage else ""
     is_script_node = node.kind in {
@@ -906,6 +1012,8 @@ def build_flowchart_node_html(node: FlowchartNode, position: dict[str, int]) -> 
     script_data_attrs = ""
 
     if is_script_node:
+        # Script summaries are embedded as data attributes.
+        # JavaScript reads these when showing hover previews and click modals.
         script_data_attrs = (
             f' data-script-name="{escape_html(node.label)}"'
             f' data-script-type="{escape_html(script_type)}"'
@@ -914,11 +1022,11 @@ def build_flowchart_node_html(node: FlowchartNode, position: dict[str, int]) -> 
             f' data-detailed-summary="{escape_html(detailed_summary)}"'
         )
 
-    return f"""      <article class="node {kind_class}{script_node_class}" style="left: {position["x"]}px; top: {position["y"]}px;"{script_data_attrs}>
+    return f"""      <article class="node {kind_class}{script_node_class}" data-node-id="{escape_html(node.id)}" style="left: {position["x"]}px; top: {position["y"]}px;" title="{escape_html(node.label)}"{script_data_attrs}>
         <div class="icon" aria-hidden="true">{icon_html}</div>
         <div>
           <div class="node-kind">{escape_html(format_node_visual_type(visual_type))}</div>
-          <div class="node-label">{escape_html(node.label)}</div>
+          <div class="node-label">{escape_html(display_label)}</div>
           <div class="node-subtitle">{escape_html(node.subtitle or "")}</div>
           {stage_html}
         </div>
@@ -969,6 +1077,8 @@ def build_flowchart_edge_svg(edge: FlowchartEdge,
         mid_x = int((source_x + target_x) / 2)
         path = f"M{source_x} {source_y} L{mid_x} {source_y} L{mid_x} {target_y} L{target_x} {target_y}"
 
+        # If the line turns vertically, place the label near the first segment.
+        # If the line is flat, place it near the middle of the whole edge.
         if abs(source_y - target_y) > 24:
             label_x = int((source_x + mid_x) / 2)
             label_y = int(source_y) - 12
@@ -979,7 +1089,11 @@ def build_flowchart_edge_svg(edge: FlowchartEdge,
     label = escape_html(format_edge_label(edge.label or edge.kind))
     edge_class = "edge-path edge-low" if edge.confidence == "low" else "edge-path"
 
-    return f"""        <g class="edge">
+    # edge-path is the visible line.
+    # edge-hit is a wide invisible line that makes hover easier.
+    # data-source / data-target let JavaScript find all edges connected to a card.
+    # anchor circles mark the connection points on the source / target cards.
+    return f"""        <g class="edge" data-source="{escape_html(edge.source)}" data-target="{escape_html(edge.target)}">
           <path class="{edge_class}" d="{path}"></path>
           <path class="edge-hit" d="{path}"></path>
           <circle class="anchor" cx="{source_x}" cy="{source_y}" r="3"></circle>
@@ -1075,6 +1189,24 @@ def format_node_visual_type(visual_type: str) -> str:
         "unknown": "Unknown",
     }
     return display_mapping.get(visual_type, visual_type.replace("_", " ").title())
+
+
+def format_flowchart_node_display_label(node: FlowchartNode) -> str:
+    """
+    Helper for shortening labels shown on the flowchart card.
+    - Keeps the original node.label untouched in the flowchart spec
+    - Shows only the final filename when a label looks like a path
+    - Supports both macOS/Linux paths and Windows paths
+    """
+    label = str(node.label).strip()
+
+    if not label:
+        return label
+
+    if "/" in label or "\\" in label:
+        return re.split(r"[\\/]", label.rstrip("/\\"))[-1] or label
+
+    return label
 
 
 def node_visual_type_to_icon_text(visual_type: str) -> str:
