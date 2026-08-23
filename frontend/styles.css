@@ -63,7 +63,7 @@ svg {
 }
 
 .section-block {
-  max-width: 1600px;
+  max-width: 1780px;
   margin: 0 auto;
 }
 
@@ -83,8 +83,13 @@ svg {
 
 .analysis-form {
   display: grid;
-  grid-template-columns: minmax(330px, 1.45fr) minmax(300px, 1.35fr) minmax(180px, 0.95fr) minmax(140px, 0.68fr);
-  gap: 30px 38px;
+  grid-template-columns:
+    minmax(300px, 1.45fr)
+    minmax(280px, 1.35fr)
+    minmax(170px, 0.86fr)
+    minmax(170px, 0.86fr)
+    minmax(140px, 0.62fr);
+  gap: 30px 34px;
   align-items: end;
 }
 
@@ -297,7 +302,10 @@ svg {
 .run-row {
   grid-column: 1 / -1;
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  gap: 12px;
   padding-top: 18px;
 }
 
@@ -336,14 +344,186 @@ svg {
 }
 
 .run-button:disabled {
-  opacity: 0.58;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
 }
 
+.run-button.is-running {
+  background: #004cff;
+  color: #ffffff;
+  opacity: 1;
+}
+
+.run-button.is-running .run-play-icon {
+  display: none;
+}
+
+.run-spinner {
+  width: 22px;
+  height: 22px;
+  display: none;
+  border: 2.4px solid rgba(255, 255, 255, 0.42);
+  border-top-color: #ffffff;
+  border-radius: 999px;
+}
+
+.run-button.is-running .run-spinner {
+  display: block;
+  animation: spin 780ms linear infinite;
+}
+
+.elapsed-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 6px 13px;
+  border: 1px solid rgba(0, 76, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(0, 76, 255, 0.06);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.elapsed-timer strong {
+  color: #004cff;
+  font-weight: 760;
+}
+
+.elapsed-timer[hidden] {
+  display: none;
+}
+
+.progress-section {
+  margin-top: 40px;
+  padding: 22px 26px 26px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.progress-header h2 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.progress-stage-label {
+  min-width: 128px;
+  padding: 7px 12px;
+  border: 1px solid rgba(0, 76, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(0, 76, 255, 0.06);
+  color: #004cff;
+  font-size: 13px;
+  font-weight: 720;
+  text-align: center;
+}
+
+.progress-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf2f8;
+}
+
+.progress-track-fill {
+  width: 0;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: #004cff;
+  transition: width 220ms ease;
+}
+
+.progress-steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 16px;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-step {
+  min-height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 680;
+  text-align: center;
+}
+
+.progress-step-marker {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  border: 2px solid #aab6c8;
+  border-radius: 999px;
+}
+
+.progress-step.is-complete,
+.progress-step.is-current {
+  border-color: rgba(0, 76, 255, 0.22);
+  color: #004cff;
+}
+
+.progress-step.is-complete .progress-step-marker {
+  display: grid;
+  place-items: center;
+  border-color: #004cff;
+  background: #004cff;
+}
+
+.progress-step.is-complete .progress-step-marker::after {
+  content: "";
+  width: 7px;
+  height: 4px;
+  border-left: 2px solid #ffffff;
+  border-bottom: 2px solid #ffffff;
+  transform: rotate(-45deg) translateY(-1px);
+}
+
+.progress-step.is-current {
+  background: rgba(0, 76, 255, 0.06);
+}
+
+.progress-step.is-current .progress-step-marker {
+  border-color: #004cff;
+  box-shadow: 0 0 0 5px rgba(0, 76, 255, 0.12);
+}
+
+.progress-step.is-error {
+  border-color: rgba(0, 76, 255, 0.30);
+  background: rgba(0, 76, 255, 0.04);
+  color: var(--kpmg-navy);
+}
+
 .run-log-section {
-  margin-top: 44px;
+  margin-top: 34px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .run-log-header {
@@ -428,8 +608,8 @@ svg {
 
 .output-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(170px, 1fr));
-  gap: 28px;
+  grid-template-columns: repeat(5, minmax(210px, 1fr));
+  gap: 38px;
 }
 
 .output-card {
@@ -518,6 +698,10 @@ svg {
     grid-template-columns: repeat(2, minmax(240px, 1fr));
   }
 
+  .progress-steps {
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
+
   .output-grid {
     grid-template-columns: repeat(2, minmax(220px, 1fr));
   }
@@ -538,6 +722,7 @@ svg {
   }
 
   .analysis-form,
+  .progress-steps,
   .output-grid {
     grid-template-columns: 1fr;
   }

@@ -6,6 +6,16 @@ Your task is to produce a structured `ScriptSummary` for the script.
 
 Return the result using the provided structured output schema.
 
+## Response Language
+
+Write all generated summary text, explanations, and uncertainty notes in the following language:
+
+```text
+{output_language}
+```
+
+Preserve code identifiers, file paths, table names, function names, and field names exactly as written in the script.
+
 ## Required Output Schema
 
 The output must conform to the current `ScriptSummary` structure:

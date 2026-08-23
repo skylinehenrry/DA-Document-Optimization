@@ -14,11 +14,43 @@ const runButton = document.getElementById("runButton");
 const statusToast = document.getElementById("statusToast");
 const runLogPanel = document.getElementById("runLogPanel");
 const runLogStatus = document.getElementById("runLogStatus");
-const modelDropdown = document.querySelector("[data-model-dropdown]");
-const modelDropdownButton = document.getElementById("modelDropdownButton");
-const modelDropdownValue = document.getElementById("modelDropdownValue");
-const modelInput = document.getElementById("model");
+const runButtonText = document.getElementById("runButtonText");
+const elapsedTimer = document.getElementById("elapsedTimer");
+const elapsedTimeValue = document.getElementById("elapsedTimeValue");
+const progressTrackFill = document.getElementById("progressTrackFill");
+const progressStageLabel = document.getElementById("progressStageLabel");
+const progressSteps = Array.from(document.querySelectorAll(".progress-step"));
+const customDropdowns = Array.from(document.querySelectorAll("[data-custom-dropdown]"));
 let logPoller = null;
+let elapsedTimerInterval = null;
+let runStartedAt = null;
+
+const progressStages = [
+  {
+    label: "Paths Received",
+    patterns: ["Script folder received", "DA Document folder received"],
+  },
+  {
+    label: "Scripts Found",
+    patterns: ["Found ", "supported script file"],
+  },
+  {
+    label: "Dependencies",
+    patterns: ["Extracting imports", "Starting dependency extraction", "Dependency profile extraction complete"],
+  },
+  {
+    label: "Workflow",
+    patterns: ["Constructing workflow dependency network", "Workflow dependency network complete"],
+  },
+  {
+    label: "Summaries",
+    patterns: ["Generating script summaries", "Script summary generation complete"],
+  },
+  {
+    label: "Outputs",
+    patterns: ["Saving JSON outputs", "Rendering workflow flowchart", "Analysis complete"],
+  },
+];
 
 const outputReadyCopy = {
   da_document: "Open the generated DA document.",
@@ -66,9 +98,129 @@ function setStatus(message, state = "ready") {
   statusToast.dataset.state = state;
 }
 
+function formatElapsedTime(milliseconds) {
+  // Convert elapsed milliseconds into HH:MM:SS for the run timer.
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+function updateElapsedTimer() {
+  // Refresh the elapsed timer while the backend workflow is running.
+  if (runStartedAt === null) {
+    elapsedTimeValue.textContent = "00:00:00";
+    return;
+  }
+
+  elapsedTimeValue.textContent = formatElapsedTime(Date.now() - runStartedAt);
+}
+
+function startElapsedTimer() {
+  // Start the visible timer that sits below the Run button.
+  stopElapsedTimer(false);
+  runStartedAt = Date.now();
+  elapsedTimer.hidden = false;
+  updateElapsedTimer();
+  elapsedTimerInterval = window.setInterval(updateElapsedTimer, 1000);
+}
+
+function stopElapsedTimer(hideTimer = false) {
+  // Stop the timer while optionally keeping the final elapsed value visible.
+  if (elapsedTimerInterval !== null) {
+    window.clearInterval(elapsedTimerInterval);
+    elapsedTimerInterval = null;
+  }
+
+  updateElapsedTimer();
+  runStartedAt = null;
+
+  if (hideTimer) {
+    elapsedTimer.hidden = true;
+    elapsedTimeValue.textContent = "00:00:00";
+  }
+}
+
+function setRunButtonState(isRunning) {
+  // Swap the Run button between the idle action and running status.
+  runButton.disabled = isRunning;
+  runButton.classList.toggle("is-running", isRunning);
+  runButtonText.textContent = isRunning ? "Running..." : "Run Analysis";
+}
+
+function setProgressStage(stageIndex, state = "running") {
+  // Update the progress bar and stage chips using one zero-based stage index.
+  const clampedIndex = Math.min(Math.max(stageIndex, 0), progressStages.length - 1);
+  const isComplete = state === "complete";
+  const isError = state === "error";
+  const progressIndex = isComplete ? progressStages.length : clampedIndex;
+  const progressPercent = (progressIndex / progressStages.length) * 100;
+
+  progressTrackFill.style.width = `${progressPercent}%`;
+  progressStageLabel.textContent = isComplete ? "Complete" : progressStages[clampedIndex].label;
+
+  progressSteps.forEach((step, index) => {
+    step.classList.toggle("is-complete", isComplete ? true : index < clampedIndex);
+    step.classList.toggle("is-current", !isComplete && !isError && index === clampedIndex);
+    step.classList.toggle("is-error", isError && index === clampedIndex);
+  });
+}
+
+function resetProgress() {
+  // Return the progress bar to the waiting state before a new run starts.
+  progressTrackFill.style.width = "0%";
+  progressStageLabel.textContent = "Waiting";
+
+  progressSteps.forEach((step) => {
+    step.classList.remove("is-current");
+    step.classList.remove("is-complete", "is-error");
+  });
+}
+
+function getProgressStageFromLogs(logs = []) {
+  // Infer the latest workflow stage from the readable backend log messages.
+  let latestStageIndex = 0;
+
+  logs.forEach((log) => {
+    progressStages.forEach((stage, stageIndex) => {
+      if (stage.patterns.some((pattern) => log.includes(pattern))) {
+        latestStageIndex = Math.max(latestStageIndex, stageIndex);
+      }
+    });
+  });
+
+  return latestStageIndex;
+}
+
+function updateProgressFromLogs(logs = []) {
+  // Keep the progress UI synchronized with the same logs shown to the user.
+  if (!logs.length) {
+    return;
+  }
+
+  const hasFailed = logs.some((log) => log.includes("Analysis failed"));
+  const hasCompleted = logs.some((log) => log.includes("Analysis complete"));
+  const latestStageIndex = getProgressStageFromLogs(logs);
+
+  if (hasFailed) {
+    setProgressStage(latestStageIndex, "error");
+    progressStageLabel.textContent = "Needs Attention";
+    return;
+  }
+
+  if (hasCompleted) {
+    setProgressStage(progressStages.length - 1, "complete");
+    return;
+  }
+
+  setProgressStage(latestStageIndex);
+}
+
 function renderLogs(logs = []) {
   // Render backend progress messages in the Run Log panel.
   runLogPanel.innerHTML = "";
+  updateProgressFromLogs(logs);
 
   if (!logs.length) {
     const emptyMessage = document.createElement("div");
@@ -110,7 +262,11 @@ async function fetchLogs() {
 
 function startLogPolling() {
   // Start periodic log refresh while analysis is running.
-  stopLogPolling();
+  if (logPoller !== null) {
+    window.clearInterval(logPoller);
+    logPoller = null;
+  }
+
   runLogStatus.textContent = "Running";
   runLogStatus.dataset.state = "running";
   fetchLogs();
@@ -128,49 +284,80 @@ function stopLogPolling(state = "complete") {
   runLogStatus.dataset.state = state;
 }
 
-function closeModelDropdown() {
-  // Close the custom model picker without changing the selected model.
-  modelDropdown.classList.remove("is-open");
-  modelDropdownButton.setAttribute("aria-expanded", "false");
+function getDropdownButton(dropdown) {
+  // Each custom dropdown has one visible button that opens the option list.
+  return dropdown.querySelector(".model-dropdown-button");
 }
 
-function openModelDropdown() {
-  // Open the menu from a fixed top edge instead of using the macOS native picker.
-  modelDropdown.classList.add("is-open");
-  modelDropdownButton.setAttribute("aria-expanded", "true");
+function getDropdownOptions(dropdown) {
+  // Scope option lookup to one dropdown so Model and Language do not affect each other.
+  return Array.from(dropdown.querySelectorAll(".model-dropdown-option"));
 }
 
-function toggleModelDropdown() {
-  // Toggle the menu when the user clicks the model control.
-  if (modelDropdown.classList.contains("is-open")) {
-    closeModelDropdown();
+function closeDropdown(dropdown) {
+  // Close one custom picker without changing the selected value.
+  const button = getDropdownButton(dropdown);
+  dropdown.classList.remove("is-open");
+
+  if (button) {
+    button.setAttribute("aria-expanded", "false");
+  }
+}
+
+function closeAllDropdowns(exceptDropdown = null) {
+  // Keep only one custom dropdown open at a time.
+  customDropdowns.forEach((dropdown) => {
+    if (dropdown !== exceptDropdown) {
+      closeDropdown(dropdown);
+    }
+  });
+}
+
+function openDropdown(dropdown) {
+  // Open the menu from a fixed top edge instead of using the browser native picker.
+  const button = getDropdownButton(dropdown);
+  closeAllDropdowns(dropdown);
+  dropdown.classList.add("is-open");
+
+  if (button) {
+    button.setAttribute("aria-expanded", "true");
+  }
+}
+
+function toggleDropdown(dropdown) {
+  // Toggle whichever picker the user clicked, such as Model or Language.
+  if (dropdown.classList.contains("is-open")) {
+    closeDropdown(dropdown);
     return;
   }
 
-  openModelDropdown();
+  openDropdown(dropdown);
 }
 
-function selectModelOption(option) {
-  // Store the selected model in the hidden input used by the backend payload.
-  modelInput.value = option.dataset.value;
-  modelDropdownValue.textContent = option.textContent.trim();
+function selectDropdownOption(dropdown, option) {
+  // Store the selected option in the hidden input used by the backend payload.
+  const input = dropdown.querySelector('input[type="hidden"]');
+  const valueLabel = getDropdownButton(dropdown).querySelector("span:first-child");
 
-  document.querySelectorAll(".model-dropdown-option").forEach((modelOption) => {
-    const isSelected = modelOption === option;
-    modelOption.classList.toggle("is-selected", isSelected);
-    modelOption.setAttribute("aria-selected", String(isSelected));
+  input.value = option.dataset.value;
+  valueLabel.textContent = option.textContent.trim();
+
+  getDropdownOptions(dropdown).forEach((dropdownOption) => {
+    const isSelected = dropdownOption === option;
+    dropdownOption.classList.toggle("is-selected", isSelected);
+    dropdownOption.setAttribute("aria-selected", String(isSelected));
   });
 
-  closeModelDropdown();
-  modelDropdownButton.focus();
+  closeDropdown(dropdown);
+  getDropdownButton(dropdown).focus();
 }
 
-function moveModelSelection(direction) {
-  // Let arrow keys move through available model options.
-  const options = Array.from(document.querySelectorAll(".model-dropdown-option"));
+function moveDropdownSelection(dropdown, direction) {
+  // Let arrow keys move through the active dropdown's available options.
+  const options = getDropdownOptions(dropdown);
   const currentIndex = options.findIndex((option) => option.classList.contains("is-selected"));
   const nextIndex = (currentIndex + direction + options.length) % options.length;
-  selectModelOption(options[nextIndex]);
+  selectDropdownOption(dropdown, options[nextIndex]);
 }
 
 function collectPayload() {
@@ -178,7 +365,8 @@ function collectPayload() {
   return {
     script_folder: document.getElementById("scriptFolder").value.trim(),
     da_document_folder: document.getElementById("documentFolder").value.trim(),
-    model: modelInput.value,
+    model: document.getElementById("model").value,
+    language: document.getElementById("language").value,
     max_concurrency: Number(document.getElementById("maxConcurrency").value),
   };
 }
@@ -293,7 +481,9 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const payload = collectPayload();
-  runButton.disabled = true;
+  setRunButtonState(true);
+  startElapsedTimer();
+  resetProgress();
   setStatus("Running analysis...", "running");
   renderLogs([]);
   updateOutputLinks({});
@@ -317,12 +507,14 @@ form.addEventListener("submit", async (event) => {
     setStatus(result.message || "Analysis complete.");
     await fetchLogs();
     stopLogPolling("complete");
+    setProgressStage(progressStages.length - 1, "complete");
   } catch (error) {
     setStatus(error.message || "Unable to run analysis.", "error");
     await fetchLogs();
     stopLogPolling("error");
   } finally {
-    runButton.disabled = false;
+    stopElapsedTimer();
+    setRunButtonState(false);
   }
 });
 
@@ -333,41 +525,50 @@ document.querySelectorAll("[data-folder-target]").forEach((button) => {
   });
 });
 
-document.getElementById("documentFolder").addEventListener("change", refreshOutputStatus);
-document.getElementById("documentFolder").addEventListener("blur", refreshOutputStatus);
+customDropdowns.forEach((dropdown) => {
+  // Reuse the same dropdown behavior for Model, Language, and future pickers.
+  const button = getDropdownButton(dropdown);
 
-modelDropdownButton.addEventListener("click", toggleModelDropdown);
+  button.addEventListener("click", () => {
+    toggleDropdown(dropdown);
+  });
 
-document.querySelectorAll(".model-dropdown-option").forEach((option) => {
-  option.addEventListener("click", () => {
-    selectModelOption(option);
+  getDropdownOptions(dropdown).forEach((option) => {
+    option.addEventListener("click", () => {
+      selectDropdownOption(dropdown, option);
+    });
+  });
+
+  dropdown.addEventListener("keydown", (event) => {
+    // Provide the expected keyboard behavior for the custom dropdown.
+    if (event.key === "Escape") {
+      closeDropdown(dropdown);
+      button.focus();
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      openDropdown(dropdown);
+      moveDropdownSelection(dropdown, 1);
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      openDropdown(dropdown);
+      moveDropdownSelection(dropdown, -1);
+    }
   });
 });
 
+document.getElementById("documentFolder").addEventListener("change", refreshOutputStatus);
+document.getElementById("documentFolder").addEventListener("blur", refreshOutputStatus);
+
 document.addEventListener("click", (event) => {
-  // Close the menu when the user clicks anywhere outside the custom dropdown.
-  if (!modelDropdown.contains(event.target)) {
-    closeModelDropdown();
-  }
-});
+  // Close open menus when the user clicks anywhere outside all custom dropdowns.
+  const clickedInsideDropdown = customDropdowns.some((dropdown) => dropdown.contains(event.target));
 
-modelDropdown.addEventListener("keydown", (event) => {
-  // Provide the expected keyboard behavior for the custom dropdown.
-  if (event.key === "Escape") {
-    closeModelDropdown();
-    modelDropdownButton.focus();
-  }
-
-  if (event.key === "ArrowDown") {
-    event.preventDefault();
-    openModelDropdown();
-    moveModelSelection(1);
-  }
-
-  if (event.key === "ArrowUp") {
-    event.preventDefault();
-    openModelDropdown();
-    moveModelSelection(-1);
+  if (!clickedInsideDropdown) {
+    closeAllDropdowns();
   }
 });
 

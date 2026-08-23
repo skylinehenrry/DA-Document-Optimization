@@ -131,6 +131,7 @@ async def run_da_document_workflow(
     script_folder: str | Path,
     da_document_folder: str | Path,
     model: ModelProvider = "OpenAI",
+    language: str = "English",
     max_concurrency: int = 3,
     logger: Callable[[str], None] | None = None,
 ) -> dict[str, Path]:
@@ -140,6 +141,7 @@ async def run_da_document_workflow(
     - da_document_folder is selected in the frontend as DA Document Folder
     - Generated files are saved into <da_document_folder>/outputs
     - model controls whether OpenAI or Ollama is used
+    - language controls generated explanation language
     - max_concurrency controls how many LLM calls can run at once
     """
     def log(message: str) -> None:
@@ -158,6 +160,7 @@ async def run_da_document_workflow(
     log(f"Script folder received: {script_folder}")
     log(f"DA Document folder received: {output_root}")
     log(f"Model selected: {model}")
+    log(f"Output language selected: {language}")
     log(f"Max concurrency selected: {max_concurrency}")
 
     log("Validating script folder.")
@@ -181,6 +184,7 @@ async def run_da_document_workflow(
         valid_file_list = valid_file_list,
         chains = dependency_chains,
         max_concurrent_files = max_concurrency,
+        output_language = language,
         logger = log,
     )
     log("Dependency profile extraction complete.")
@@ -191,6 +195,7 @@ async def run_da_document_workflow(
         construct_dependency_network,
         profiles,
         model,
+        language,
         log,
     )
     log("Workflow dependency network complete.")
@@ -202,6 +207,7 @@ async def run_da_document_workflow(
         workflow_graph = workflow_network,
         model = model,
         max_concurrent_files = max_concurrency,
+        output_language = language,
         logger = log,
     )
     log("Script summary generation complete.")
@@ -247,6 +253,7 @@ async def main() -> None:
         script_folder = script_folder,
         da_document_folder = output_folder,
         model = "Ollama",
+        language = "English",
         max_concurrency = 3,
         logger = print,
     )

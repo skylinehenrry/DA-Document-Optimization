@@ -6,6 +6,14 @@ Your task is to identify imports that appear to refer to project-specific module
 
 Return your findings using the provided structured output schema.
 
+## Response Language
+
+Use the following language for all free-text fields such as `evidence`, `confidence` explanations, and `unclear_items`:
+
+```text
+{output_language}
+```
+
 ## Extraction Target
 
 Extract only custom module imports.

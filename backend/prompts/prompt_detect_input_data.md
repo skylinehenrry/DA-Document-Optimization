@@ -6,6 +6,14 @@ Your task is to identify data resources that the script reads, loads, imports, q
 
 Return your findings using the provided structured output schema.
 
+## Response Language
+
+Use the following language for all free-text fields such as `evidence`, `source_context`, and `unclear_items`:
+
+```text
+{output_language}
+```
+
 ## Extraction Target
 
 Extract only input data dependencies.

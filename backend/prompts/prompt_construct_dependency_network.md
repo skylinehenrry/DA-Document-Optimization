@@ -6,6 +6,14 @@ Your task is to infer the overall processing workflow: how scripts relate to eac
 
 Return the result using the provided structured output schema.
 
+## Response Language
+
+Use the following language for all free-text fields such as workflow summary, role descriptions, labels, evidence, and uncertainty notes:
+
+```text
+{output_language}
+```
+
 ## Reasoning Rules
 
 Use the dependency profiles as evidence.

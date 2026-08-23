@@ -134,6 +134,7 @@ def create_dependency_chains(model: Literal["OpenAI", "Ollama"]) -> DependencyEx
 async def extract_dependencies_for_file(file: Path,
                                         chains: dict,
                                         semaphore: asyncio.Semaphore,
+                                        output_language: str = "English",
                                         logger: Callable[[str], None] | None = None) -> ScriptDependencyProfile:
     """
     For each file passed in, pass the content of the file to LLM and buidl a ScriptDependencyProfile object that contains the following information:
@@ -150,7 +151,10 @@ async def extract_dependencies_for_file(file: Path,
 
     log(f"Extracting dependency profile: {file.name}")
     document = TextLoader(file_path = str(file), encoding = "utf-8", autodetect_encoding = True).load()[0]
-    payload = {"script_content": document.page_content}
+    payload = {
+        "script_content": document.page_content,
+        "output_language": output_language,
+    }
     import_result, input_data_result, output_data_result = await asyncio.gather(
         invoke_dependency_chain(chains["imports"], payload, semaphore, f"{file.name}: imports", logger = logger),
         invoke_dependency_chain(chains["input data"], payload, semaphore, f"{file.name}: input data", logger = logger),
@@ -210,6 +214,7 @@ async def invoke_dependency_chain(chain,
 async def extract_dependencies_for_folder(valid_file_list: list[Path],
                                           chains: dict,
                                           max_concurrent_files: int = 1,
+                                          output_language: str = "English",
                                           logger: Callable[[str], None] | None = None):
     """
     Batch execution for extract_dependencies_for_file, with asynchronus implementation for processing efficiency
@@ -223,6 +228,7 @@ async def extract_dependencies_for_folder(valid_file_list: list[Path],
     tasks = [extract_dependencies_for_file(file = file, 
                                         chains = chains,
                                         semaphore = semaphore,
+                                        output_language = output_language,
                                         logger = logger) for file in valid_file_list]
 
     profiles = await asyncio.gather(*tasks)
@@ -246,6 +252,7 @@ def profiles_to_json(profiles: list[ScriptDependencyProfile]) -> str:
 
 def construct_dependency_network(profiles: list[ScriptDependencyProfile], 
                                  model: Literal["OpenAI", "Ollama"] = "OpenAI",
+                                 output_language: str = "English",
                                  logger: Callable[[str], None] | None = None) -> WorkflowDependencyGraph:
 
     def log(message: str) -> None:
@@ -257,7 +264,10 @@ def construct_dependency_network(profiles: list[ScriptDependencyProfile],
     
     workflow_prompt = ChatPromptTemplate.from_template((PROMPTS_DIR / "prompt_construct_dependency_network.md").read_text(encoding = "utf-8"))
     workflow_chain = workflow_prompt | LLM.with_structured_output(schema = WorkflowDependencyGraph)
-    workflow_graph = workflow_chain.invoke({"script_dependency_profiles": profiles_to_json(profiles)})
+    workflow_graph = workflow_chain.invoke({
+        "script_dependency_profiles": profiles_to_json(profiles),
+        "output_language": output_language,
+    })
     
     log(f"Workflow dependency network contains {len(workflow_graph.nodes)} node(s) and {len(workflow_graph.edges)} edge(s).")
     return workflow_graph
@@ -291,6 +301,7 @@ async def generate_summary_for_file(file: Path,
                                     workflow_graph: WorkflowDependencyGraph,
                                     semaphore: asyncio.Semaphore,
                                     summary_chain,
+                                    output_language: str = "English",
                                     logger: Callable[[str], None] | None = None) -> ScriptSummary:
 
     def log(message: str) -> None:
@@ -317,7 +328,8 @@ async def generate_summary_for_file(file: Path,
                "script_stage_order_ID": script_stage_order_ID,
                "script_content": document.page_content, 
                "script_dependency_profile": object_to_json(script_profile), 
-               "workflow_dependency_graph": object_to_json(workflow_graph)}
+               "workflow_dependency_graph": object_to_json(workflow_graph),
+               "output_language": output_language}
 
     async with semaphore:
         summary = await summary_chain.ainvoke(payload)
@@ -331,6 +343,7 @@ async def generate_summary_for_folder(valid_file_list: list[Path],
                                       workflow_graph: WorkflowDependencyGraph,
                                       model: Literal["OpenAI", "Ollama"] = "OpenAI",
                                       max_concurrent_files: int = 10,
+                                      output_language: str = "English",
                                       logger: Callable[[str], None] | None = None) -> list[ScriptSummary]:
     """
     Generate ScriptSummary objects for all supported scripts.
@@ -358,7 +371,7 @@ async def generate_summary_for_folder(valid_file_list: list[Path],
         if profile is None:
             log(f"Skipping summary because dependency profile is missing: {file.name}")
             continue
-        tasks.append(generate_summary_for_file(file, profile, workflow_graph, semaphore, summary_chain, logger = logger))
+        tasks.append(generate_summary_for_file(file, profile, workflow_graph, semaphore, summary_chain, output_language = output_language, logger = logger))
 
     summaries = await asyncio.gather(*tasks)
     log(f"Completed script summaries for {len(summaries)} file(s).")

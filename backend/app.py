@@ -40,6 +40,11 @@ PROJECT_DIR = BACKEND_DIR.parent
 FRONTEND_DIR = PROJECT_DIR / "frontend"
 OUTPUTS_DIR = BACKEND_DIR / "outputs"
 
+# StaticFiles requires the mounted folder to exist at import time.
+# The analysis workflow normally writes to the user-selected DA Document folder,
+# but this local backend outputs folder is still mounted as a safe default path.
+OUTPUTS_DIR.mkdir(parents = True, exist_ok = True)
+
 # Heartbeat tuning.
 #
 # The frontend sends a heartbeat every few seconds while the browser page is open.
@@ -82,12 +87,14 @@ class RunAnalysisRequest(BaseModel):
     - script_folder is the folder containing scripts to analyze
     - da_document_folder is where final DA outputs should be saved
     - model controls the selected LLM provider
+    - language controls the language used in generated explanations
     - max_concurrency controls parallel LLM requests
     """
 
     script_folder: str
     da_document_folder: str
     model: str
+    language: str = "English"
     max_concurrency: int
 
 
@@ -345,6 +352,7 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResponse:
             script_folder = request.script_folder,
             da_document_folder = request.da_document_folder,
             model = request.model,
+            language = request.language,
             max_concurrency = request.max_concurrency,
             logger = add_run_log,
         )

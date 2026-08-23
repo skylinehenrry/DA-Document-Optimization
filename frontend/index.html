@@ -25,7 +25,7 @@
                 name="script_folder"
                 type="text"
                 autocomplete="off"
-                placeholder="/Users/henry/Documents/Projects/Project/scripts"
+                placeholder="Fill In Path to Scripts"
                 required
               >
             </span>
@@ -45,7 +45,7 @@
                 name="da_document_folder"
                 type="text"
                 autocomplete="off"
-                placeholder="/Users/henry/Documents/Projects/Project/outputs"
+                placeholder="Fill In Path to DA Document"
                 required
               >
             </span>
@@ -58,7 +58,7 @@
 
         <label class="field">
           <span>Model</span>
-          <span class="model-dropdown" data-model-dropdown>
+          <span class="model-dropdown" data-custom-dropdown>
             <input id="model" name="model" type="hidden" value="OpenAI">
             <button
               id="modelDropdownButton"
@@ -93,6 +93,43 @@
           </span>
         </label>
 
+        <label class="field">
+          <span>Language</span>
+          <span class="model-dropdown" data-custom-dropdown>
+            <input id="language" name="language" type="hidden" value="English">
+            <button
+              id="languageDropdownButton"
+              class="model-dropdown-button"
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+            >
+              <span id="languageDropdownValue">English</span>
+              <span class="model-dropdown-chevron" aria-hidden="true"></span>
+            </button>
+            <span id="languageDropdownMenu" class="model-dropdown-menu" role="listbox" aria-label="Language">
+              <button
+                class="model-dropdown-option is-selected"
+                type="button"
+                role="option"
+                data-value="English"
+                aria-selected="true"
+              >
+                English
+              </button>
+              <button
+                class="model-dropdown-option"
+                type="button"
+                role="option"
+                data-value="Japanese"
+                aria-selected="false"
+              >
+                Japanese
+              </button>
+            </span>
+          </span>
+        </label>
+
         <label class="field small-field">
           <span>Max Concurrency</span>
           <span class="control">
@@ -111,11 +148,55 @@
 
         <div class="run-row">
           <button id="runButton" class="run-button" type="submit">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg>
-            <span>Run Analysis</span>
+            <svg class="run-play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg>
+            <span class="run-spinner" aria-hidden="true"></span>
+            <span id="runButtonText">Run Analysis</span>
           </button>
+
+          <div id="elapsedTimer" class="elapsed-timer" hidden>
+            <span>Elapsed</span>
+            <strong id="elapsedTimeValue">00:00:00</strong>
+          </div>
         </div>
       </form>
+    </section>
+
+    <section class="section-block progress-section" aria-labelledby="progress-title">
+      <div class="progress-header">
+        <h2 id="progress-title">Current Progress</h2>
+        <span id="progressStageLabel" class="progress-stage-label">Waiting</span>
+      </div>
+
+      <div class="progress-track" aria-hidden="true">
+        <span id="progressTrackFill" class="progress-track-fill"></span>
+      </div>
+
+      <ol id="progressSteps" class="progress-steps" aria-label="Analysis progress">
+        <li class="progress-step" data-stage-index="0">
+          <span class="progress-step-marker"></span>
+          <span>Paths Received</span>
+        </li>
+        <li class="progress-step" data-stage-index="1">
+          <span class="progress-step-marker"></span>
+          <span>Scripts Found</span>
+        </li>
+        <li class="progress-step" data-stage-index="2">
+          <span class="progress-step-marker"></span>
+          <span>Dependencies</span>
+        </li>
+        <li class="progress-step" data-stage-index="3">
+          <span class="progress-step-marker"></span>
+          <span>Workflow</span>
+        </li>
+        <li class="progress-step" data-stage-index="4">
+          <span class="progress-step-marker"></span>
+          <span>Summaries</span>
+        </li>
+        <li class="progress-step" data-stage-index="5">
+          <span class="progress-step-marker"></span>
+          <span>Outputs</span>
+        </li>
+      </ol>
     </section>
 
     <section class="section-block run-log-section" aria-labelledby="run-log-title">
