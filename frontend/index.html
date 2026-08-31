@@ -1,269 +1,1249 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DA Document Generator</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <header class="app-header">
-    <h1>DA Document Generator</h1>
-  </header>
-
-  <main class="app-shell">
-    <section class="section-block" aria-labelledby="configuration-title">
-      <h2 id="configuration-title">1. Analysis Configuration</h2>
-
-      <form id="analysisForm" class="analysis-form">
-        <label class="field">
-          <span>Script Folder</span>
-          <span class="path-picker">
-            <span class="control">
-              <input
-                id="scriptFolder"
-                name="script_folder"
-                type="text"
-                autocomplete="off"
-                placeholder="Fill In Path to Scripts"
-                required
-              >
-            </span>
-            <button class="browse-button" type="button" data-folder-target="scriptFolder" aria-label="Browse for script folder">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5a2 2 0 0 0-2-2h-7.2L9.9 4.6A2 2 0 0 0 8.5 4H5a2 2 0 0 0-2 2v1.5Z"/><path d="M3 8h18"/></svg>
-              <span>Browse</span>
-            </button>
+<html lang="en" data-theme="blue">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#ffffff">
+    <title>
+      DA Document Generator
+    </title>
+    <link rel="stylesheet" href="/frontend/styles.css">
+  </head>
+  <body>
+    <!--
+    The local Python application serves this workspace.
+    - No remote fonts, scripts, diagram services or build tools are required.
+    - Saved graphs and jobs belong to the backend; unsaved edits stay in this browser.
+    - Provider calls and interrupted-operation retries require an explicit action.
+    -->
+    <!--
+    Local icon library.
+    - Use a consistent outline style without remote scripts, fonts or image requests.
+    - Symbols are reused by static markup and app.js; keep their identifiers stable.
+    - The icons decorate text labels rather than replace accessible action names.
+    -->
+    <svg class="icon-library" aria-hidden="true">
+      <defs>
+        <symbol id="i-flow" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="6" rx="1.5"/>
+          <rect x="14" y="15" width="7" height="6" rx="1.5"/>
+          <path d="M6.5 9v8a1 1 0 0 0 1 1H14M10 6h7a1 1 0 0 1 1 1v8"/>
+        </symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14"/>
+        </symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24">
+          <path d="M5 12h14m-5-5 5 5-5 5"/>
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+          <path d="m5 12 4 4L19 6"/>
+        </symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24">
+          <path d="M3 7V5a1 1 0 0 1 1-1h5l3 3h8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z"/>
+          <path d="M3 9h18"/>
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+          <circle cx="10.5" cy="10.5" r="6.5"/>
+          <path d="m16 16 4 4"/>
+        </symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24">
+          <path d="M4 7h16M4 17h16"/>
+          <circle cx="8" cy="7" r="3"/>
+          <circle cx="16" cy="17" r="3"/>
+        </symbol>
+        <symbol id="i-refresh" viewBox="0 0 24 24">
+          <path d="M20 10a8 8 0 0 0-14-4L3 9m0-5v5h5M4 14a8 8 0 0 0 14 4l3-3m0 5v-5h-5"/>
+        </symbol>
+        <symbol id="i-file" viewBox="0 0 24 24">
+          <path d="M14 3H5v18h14V8l-5-5Z"/>
+          <path d="M14 3v5h5M8 13h8M8 17h5"/>
+        </symbol>
+        <symbol id="i-download" viewBox="0 0 24 24">
+          <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>
+        </symbol>
+        <symbol id="i-upload" viewBox="0 0 24 24">
+          <path d="M12 16V4m-5 5 5-5 5 5M4 17v4h16v-4"/>
+        </symbol>
+        <symbol id="i-external" viewBox="0 0 24 24">
+          <path d="M14 4h6v6m0-6-11 11M11 4H4v16h16v-7"/>
+        </symbol>
+        <symbol id="i-undo" viewBox="0 0 24 24">
+          <path d="M3 8h10a7 7 0 0 1 0 14M3 8l5-5M3 8l5 5"/>
+        </symbol>
+        <symbol id="i-redo" viewBox="0 0 24 24">
+          <path d="M21 8H11a7 7 0 0 0 0 14M21 8l-5-5M21 8l-5 5"/>
+        </symbol>
+        <symbol id="i-fit" viewBox="0 0 24 24">
+          <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>
+          <rect x="8" y="8" width="8" height="8" rx="1"/>
+        </symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24">
+          <path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>
+        </symbol>
+        <symbol id="i-close" viewBox="0 0 24 24">
+          <path d="m6 6 12 12M6 18 18 6"/>
+        </symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24">
+          <path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/>
+          <path d="m8 12 3 3 5-6"/>
+        </symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 7v6l4 2"/>
+        </symbol>
+        <symbol id="i-info" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 11v6m0-10v1"/>
+        </symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24">
+          <path d="M4 6h16M4 12h16M4 18h16"/>
+        </symbol>
+        <symbol id="i-grid" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+        </symbol>
+        <symbol id="i-sparkles" viewBox="0 0 24 24">
+          <path d="m12 3 2.7 6.3L21 12l-6.3 2.7L12 21l-2.7-6.3L3 12l6.3-2.7L12 3ZM20 2v4m-2-2h4"/>
+        </symbol>
+        <symbol id="i-code" viewBox="0 0 24 24">
+          <path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-16-2 20"/>
+        </symbol>
+        <symbol id="i-database" viewBox="0 0 24 24">
+          <ellipse cx="12" cy="5" rx="8" ry="3"/>
+          <path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/>
+        </symbol>
+        <symbol id="i-terminal" viewBox="0 0 24 24">
+          <rect x="2" y="3" width="20" height="18" rx="3"/>
+          <path d="m6 8 4 4-4 4m7 0h5"/>
+        </symbol>
+        <symbol id="i-palette" viewBox="0 0 24 24">
+          <path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1.4-3.4 1.5 1.5 0 0 1 1.1-2.6H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9Z"/>
+          <path d="M7 9h.01M11 6h.01M16 8h.01M6 14h.01" stroke-width="3"/>
+        </symbol>
+      </defs>
+    </svg>
+    <a class="skip-link" href="#mainContent">
+      Skip to workspace
+    </a>
+    <!--
+    Saved workflow navigation.
+    - The backend owns the saved revisions; app.js fills the list from durable data.
+    - Preserve IDs and data attributes because the controller binds to them.
+    -->
+    <aside class="library-sidebar" id="librarySidebar" aria-label="Saved workflow library">
+      <div class="library-brand-row">
+    <button class="brand" id="brandHome" type="button">
+        <span class="brand-mark">
+          <svg aria-hidden="true">
+            <use href="#i-flow"/>
+          </svg>
+        </span>
+        <span>
+          <strong>
+            DA Document Generator
+          </strong>
+          <small>
+            Saved workflow library
+          </small>
+        </span>
+      </button>
+        <button class="icon-button mobile-menu" id="closeLibrary" type="button" aria-label="Close workflow library">
+        <svg aria-hidden="true"><use href="#i-close"/></svg>
+      </button>
+    </div>
+    <button class="button button-primary new-analysis" id="newAnalysisButton" type="button">
+        <svg aria-hidden="true">
+          <use href="#i-plus"/>
+        </svg>
+        New analysis
+      </button>
+      <div class="library-heading">
+        <h2>
+          Saved workflows
+        </h2>
+        <button class="icon-button" id="refreshLibrary" type="button" aria-label="Refresh saved workflows">
+          <svg aria-hidden="true">
+            <use href="#i-refresh"/>
+          </svg>
+        </button>
+      </div>
+      <label class="search-control library-search">
+        <svg aria-hidden="true">
+          <use href="#i-search"/>
+        </svg>
+        <input id="librarySearch" type="search" placeholder="Find a workflow" aria-label="Find a saved workflow">
+      </label>
+      <nav id="draftList" class="draft-list" aria-label="Saved workflows">
+        <p class="library-empty">
+          Connecting to your saved workflows…
+        </p>
+      </nav>
+      <div class="sidebar-footer">
+        <p>
+          <svg aria-hidden="true">
+            <use href="#i-shield"/>
+          </svg>
+          <span>
+            Saved on this computer
+            <small>
+              Drafts stay when you close the browser.
+            </small>
           </span>
-        </label>
-
-        <label class="field">
-          <span>DA Document Folder</span>
-          <span class="path-picker">
-            <span class="control">
-              <input
-                id="documentFolder"
-                name="da_document_folder"
-                type="text"
-                autocomplete="off"
-                placeholder="Fill In Path to DA Document"
-                required
-              >
-            </span>
-            <button class="browse-button" type="button" data-folder-target="documentFolder" aria-label="Browse for DA document folder">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5a2 2 0 0 0-2-2h-7.2L9.9 4.6A2 2 0 0 0 8.5 4H5a2 2 0 0 0-2 2v1.5Z"/><path d="M3 8h18"/></svg>
-              <span>Browse</span>
-            </button>
+        </p>
+        <button class="text-button" id="settingsButton" type="button">
+          <svg aria-hidden="true">
+            <use href="#i-settings"/>
+          </svg>
+          App settings
+        </button>
+      </div>
+    </aside>
+    <main class="workspace" id="mainContent">
+      <div class="topbar">
+        <div class="app-identity">
+          <span class="app-identity-mark" aria-hidden="true">
+            <svg>
+              <use href="#i-flow"/>
+            </svg>
           </span>
-        </label>
-
-        <label class="field">
-          <span>Model</span>
-          <span class="model-dropdown" data-custom-dropdown>
-            <input id="model" name="model" type="hidden" value="OpenAI">
-            <button
-              id="modelDropdownButton"
-              class="model-dropdown-button"
-              type="button"
-              aria-haspopup="listbox"
-              aria-expanded="false"
-            >
-              <span id="modelDropdownValue">OpenAI</span>
-              <span class="model-dropdown-chevron" aria-hidden="true"></span>
-            </button>
-            <span id="modelDropdownMenu" class="model-dropdown-menu" role="listbox" aria-label="Model">
-              <button
-                class="model-dropdown-option is-selected"
-                type="button"
-                role="option"
-                data-value="OpenAI"
-                aria-selected="true"
-              >
-                OpenAI
-              </button>
-              <button
-                class="model-dropdown-option"
-                type="button"
-                role="option"
-                data-value="Ollama"
-                aria-selected="false"
-              >
-                Ollama
-              </button>
-            </span>
+          <strong>
+            DA Document Generator
+          </strong>
+          <span id="breadcrumbTitle" class="current-project">
+            New analysis
           </span>
-        </label>
-
-        <label class="field">
-          <span>Language</span>
-          <span class="model-dropdown" data-custom-dropdown>
-            <input id="language" name="language" type="hidden" value="English">
-            <button
-              id="languageDropdownButton"
-              class="model-dropdown-button"
-              type="button"
-              aria-haspopup="listbox"
-              aria-expanded="false"
-            >
-              <span id="languageDropdownValue">English</span>
-              <span class="model-dropdown-chevron" aria-hidden="true"></span>
-            </button>
-            <span id="languageDropdownMenu" class="model-dropdown-menu" role="listbox" aria-label="Language">
-              <button
-                class="model-dropdown-option is-selected"
-                type="button"
-                role="option"
-                data-value="English"
-                aria-selected="true"
-              >
-                English
-              </button>
-              <button
-                class="model-dropdown-option"
-                type="button"
-                role="option"
-                data-value="Japanese"
-                aria-selected="false"
-              >
-                Japanese
-              </button>
-            </span>
-          </span>
-        </label>
-
-        <label class="field small-field">
-          <span>Max Concurrency</span>
-          <span class="control">
-            <input
-              id="maxConcurrency"
-              name="max_concurrency"
-              type="number"
-              min="1"
-              max="20"
-              step="1"
-              value="3"
-              required
-            >
-          </span>
-        </label>
-
-        <div class="run-row">
-          <button id="runButton" class="run-button" type="submit">
-            <svg class="run-play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z"/></svg>
-            <span class="run-spinner" aria-hidden="true"></span>
-            <span id="runButtonText">Run Analysis</span>
+        </div>
+        <div class="topbar-actions">
+          <button class="text-button library-toggle" id="toggleLibrary" type="button" aria-label="Toggle saved workflow library" aria-expanded="false">
+            <svg aria-hidden="true">
+              <use href="#i-folder"/>
+            </svg>
+            Saved workflows
           </button>
-
-          <div id="elapsedTimer" class="elapsed-timer" hidden>
-            <span>Elapsed</span>
-            <strong id="elapsedTimeValue">00:00:00</strong>
+          <span class="connection-status" id="connectionStatus" role="status">
+            <i>
+            </i>
+            Connecting
+          </span>
+          <button class="text-button" id="activityButton" type="button">
+            <svg aria-hidden="true">
+              <use href="#i-clock"/>
+            </svg>
+            Activity
+            <span class="activity-count" id="activityCount" hidden>
+            </span>
+          </button>
+        </div>
+      </div>
+      <header class="page-heading">
+        <div>
+          <p class="eyebrow">
+            WORKFLOW STUDIO
+          </p>
+          <h1 id="projectTitle">
+            Create a workflow.
+          </h1>
+          <p id="projectSubtitle">
+            Understand your project. Refine the connections. Share the result.
+          </p>
+        </div>
+        <span class="revision-pill" id="revisionPill" hidden>
+        </span>
+      </header>
+      <div id="connectionBanner" class="notice notice-warning" role="status" hidden>
+        <svg aria-hidden="true">
+          <use href="#i-info"/>
+        </svg>
+        <div>
+          <strong>
+            Connection paused
+          </strong>
+          <p id="connectionMessage">
+            Reopen the launcher if the local server was stopped. Saved drafts and browser edits are retained.
+          </p>
+        </div>
+        <button class="button button-small" id="reconnectButton" type="button">
+          Check connection
+        </button>
+      </div>
+      <div id="taskNotice" class="notice task-notice" role="status" hidden>
+      </div>
+      <div id="appMessage" class="notice" role="status" hidden>
+      </div>
+      <!--
+      Analyze: collect project locations and optional context.
+      - A blank project name resolves to the source folder name on the backend.
+      - Native folder buttons update the existing fields without submitting the form.
+      - Runtime context stays optional; analysis never executes the selected scripts.
+      -->
+      <section id="analyzePanel" class="stage-panel" aria-label="Analyze your project">
+        <div class="analysis-layout">
+          <div class="panel analysis-card">
+            <div class="panel-heading section-title">
+              <span class="heading-icon" aria-hidden="true">
+                <svg aria-hidden="true">
+                  <use href="#i-folder"/>
+                </svg>
+              </span>
+              <h2>
+                1. Analysis Configuration
+              </h2>
+              <p>
+                Choose the project to inspect and where its finished workflow should be saved.
+              </p>
+            </div>
+            <form id="analysisForm" class="stack-form">
+              <label class="field">
+                <span>
+                  Project name
+                  <small>
+                    optional
+                  </small>
+                </span>
+                <input id="workflowName" type="text" maxlength="1000" placeholder="Defaults to the source folder name">
+              </label>
+              <label class="field">
+                <span>
+                  Source folder
+                </span>
+                <span class="path-control">
+                  <input id="scriptFolder" type="text" placeholder="Full path to your project folder" required autocomplete="off">
+                  <button class="button" type="button" data-folder-target="scriptFolder" aria-label="Browse for source folder">
+                    <svg aria-hidden="true">
+                      <use href="#i-folder"/>
+                    </svg>
+                    Browse
+                  </button>
+                </span>
+                <small>
+                  Includes Python, SQL, BAT and Alteryx workflows in subfolders.
+                </small>
+              </label>
+              <label class="field">
+                <span>
+                  Output folder
+                </span>
+                <span class="path-control">
+                  <input id="documentFolder" type="text" placeholder="Where the finished flowcharts will be saved" required autocomplete="off">
+                  <button class="button" type="button" data-folder-target="documentFolder" aria-label="Browse for output folder">
+                    <svg aria-hidden="true">
+                      <use href="#i-folder"/>
+                    </svg>
+                    Browse
+                  </button>
+                </span>
+                <small>
+                  Each draft and generation gets its own folder.
+                </small>
+              </label>
+              <details class="advanced-settings">
+                <summary>
+                  Runtime context
+                  <span>
+                    Optional · improves matching
+                  </span>
+                </summary>
+                <p class="muted">
+                  Only fill in values you know. Ambiguous paths and database connections remain flagged for review.
+                </p>
+                <label class="field">
+                  <span>
+                    Working folder when scripts run
+                  </span>
+                  <input id="workingDirectory" type="text" placeholder="For example, the folder used by your BAT launcher">
+                </label>
+                <div class="two-columns">
+                  <label class="field">
+                    <span>
+                      SQL dialect
+                    </span>
+                    <input id="sqlDialect" type="text" placeholder="tsql, postgres, snowflake…">
+                  </label>
+                  <label class="field">
+                    <span>
+                      Shared database identity
+                    </span>
+                    <input id="databaseNamespace" type="text" placeholder="For example, finance-production">
+                  </label>
+                </div>
+              </details>
+              <div class="form-footer">
+                <button class="button button-primary" id="analyzeButton" type="submit">
+                  Analyze project
+                  <svg aria-hidden="true">
+                    <use href="#i-arrow"/>
+                  </svg>
+                </button>
+                <span class="quiet-note">
+                  <svg aria-hidden="true">
+                    <use href="#i-shield"/>
+                  </svg>
+                  Reads files. Never runs your scripts.
+                </span>
+              </div>
+            </form>
+          </div>
+          <aside class="analysis-explainer">
+            <div class="workflow-preview" aria-hidden="true">
+              <div class="preview-heading">
+                <span>
+                  FROM SOURCE TO FLOWCHART
+                </span>
+                <svg aria-hidden="true">
+                  <use href="#i-flow"/>
+                </svg>
+              </div>
+              <div class="preview-node">
+                <svg aria-hidden="true">
+                  <use href="#i-code"/>
+                </svg>
+                <div>
+                  <strong>
+                    Your source files
+                  </strong>
+                  <small>
+                    One project. Multiple languages.
+                  </small>
+                </div>
+              </div>
+              <div class="preview-connector">
+                <svg aria-hidden="true">
+                  <use href="#i-arrow"/>
+                </svg>
+              </div>
+              <div class="preview-node">
+                <svg aria-hidden="true">
+                  <use href="#i-flow"/>
+                </svg>
+                <div>
+                  <strong>
+                    A draft you can edit
+                  </strong>
+                  <small>
+                    Review, reconnect and arrange.
+                  </small>
+                </div>
+              </div>
+              <div class="preview-connector">
+                <svg aria-hidden="true">
+                  <use href="#i-arrow"/>
+                </svg>
+              </div>
+              <div class="preview-node">
+                <svg aria-hidden="true">
+                  <use href="#i-sparkles"/>
+                </svg>
+                <div>
+                  <strong>
+                    A flowchart ready to share
+                  </strong>
+                  <small>
+                    Interactive. Self-contained. Yours.
+                  </small>
+                </div>
+              </div>
+            </div>
+            <h2>
+              Clarity, one connection at a time.
+            </h2>
+            <p>
+              Start with a draft grounded in your source code. Make it accurate before making it presentable.
+            </p>
+            <div class="format-tags" aria-label="Supported source types">
+              <span>
+                <svg aria-hidden="true">
+                  <use href="#i-code"/>
+                </svg>
+                Python
+              </span>
+              <span>
+                <svg aria-hidden="true">
+                  <use href="#i-database"/>
+                </svg>
+                SQL
+              </span>
+              <span>
+                <svg aria-hidden="true">
+                  <use href="#i-terminal"/>
+                </svg>
+                BAT
+              </span>
+              <span>
+                <svg aria-hidden="true">
+                  <use href="#i-flow"/>
+                </svg>
+                Alteryx
+              </span>
+            </div>
+            <ul class="benefit-list">
+              <li>
+                <svg aria-hidden="true">
+                  <use href="#i-search"/>
+                </svg>
+                <div>
+                  <strong>
+                    Trace it to the source
+                  </strong>
+                  <p>
+                    Inspect the evidence behind each connection.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <svg aria-hidden="true">
+                  <use href="#i-check"/>
+                </svg>
+                <div>
+                  <strong>
+                    Keep your corrections
+                  </strong>
+                  <p>
+                    Generation adds context without changing your graph.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <svg aria-hidden="true">
+                  <use href="#i-shield"/>
+                </svg>
+                <div>
+                  <strong>
+                    Work at your own pace
+                  </strong>
+                  <p>
+                    Saved revisions stay here when you close the browser.
+                  </p>
+                </div>
+              </li>
+            </ul>
+            <p class="scope-note">
+              Maps dependencies and explicit workflow wiring. Dynamic paths and individual code branches may need manual review.
+            </p>
+          </aside>
+        </div>
+      </section>
+      <!--
+      Shared workflow progress and compact activity preview.
+      - The three stages stay navigable after a draft exists.
+      - The progress line reflects saved workflow state, not an invented percentage.
+      - Recent messages come from durable backend jobs and link to full activity.
+      -->
+      <section class="progress-card" aria-labelledby="progressHeading">
+        <div class="progress-heading">
+          <h2 id="progressHeading">
+            Current Progress
+          </h2>
+          <span class="badge info" id="progressStageLabel">
+            Ready
+          </span>
+        </div>
+        <div class="progress-track" aria-hidden="true">
+          <span id="progressTrackFill">
+          </span>
+        </div>
+        <ol class="workflow-steps" aria-label="Workflow stages">
+          <li>
+            <button type="button" data-step="analyze" class="step-button is-current" aria-current="step">
+              <span class="step-number" aria-hidden="true">
+                <svg aria-hidden="true">
+                  <use href="#i-folder"/>
+                </svg>
+              </span>
+              <span>
+                <strong>
+                  Analysis
+                </strong>
+                <small>
+                  Read the project
+                </small>
+              </span>
+            </button>
+          </li>
+          <li>
+            <button type="button" data-step="review" class="step-button" disabled>
+              <span class="step-number" aria-hidden="true">
+                <svg aria-hidden="true">
+                  <use href="#i-flow"/>
+                </svg>
+              </span>
+              <span>
+                <strong>
+                  Workflow Review
+                </strong>
+                <small>
+                  Correct the connections
+                </small>
+              </span>
+            </button>
+          </li>
+          <li>
+            <button type="button" data-step="generate" class="step-button" disabled>
+              <span class="step-number" aria-hidden="true">
+                <svg aria-hidden="true">
+                  <use href="#i-sparkles"/>
+                </svg>
+              </span>
+              <span>
+                <strong>
+                  Outputs
+                </strong>
+                <small>
+                  Generate and download
+                </small>
+              </span>
+            </button>
+          </li>
+        </ol>
+      </section>
+      <section class="run-log-panel" id="runLogPanel" aria-labelledby="runLogHeading">
+        <div class="section-heading">
+          <h2 id="runLogHeading">
+            Run Log
+          </h2>
+          <div class="button-row">
+            <span class="badge info" id="runLogStatus">
+              Ready
+            </span>
+            <button class="text-button" type="button" data-open-activity>
+              <svg aria-hidden="true">
+                <use href="#i-clock"/>
+              </svg>
+              View all
+            </button>
           </div>
         </div>
+        <div class="run-log-preview" id="runLogPreview" role="log" aria-live="polite">
+          <p class="run-log-empty">
+            No operations yet. Start an analysis to see progress here.
+          </p>
+        </div>
+      </section>
+      <!--
+      Review: edit the draft before attaching summaries.
+      - Keep the diagram, evidence and source coverage in separate accessible tabs.
+      - Reconnection, undo and recovery are handled by the existing graph session.
+      - Do not rename IDs here without updating the controller's event bindings.
+      -->
+      <section id="reviewPanel" class="stage-panel" aria-label="Review the draft" hidden>
+        <div class="review-overview">
+          <div class="overview-copy">
+            <h2>
+              2. Review Workflow
+            </h2>
+            <p id="coverageSummary">
+            </p>
+          </div>
+          <div class="graph-metrics">
+            <span>
+              <strong id="sourceCount">
+                0
+              </strong>
+              source files
+            </span>
+            <span>
+              <strong id="nodeCount">
+                0
+              </strong>
+              nodes
+            </span>
+            <span>
+              <strong id="edgeCount">
+                0
+              </strong>
+              connections
+            </span>
+          </div>
+        </div>
+        <div id="revisionConflict" class="notice notice-warning" hidden>
+          <svg aria-hidden="true">
+            <use href="#i-info"/>
+          </svg>
+          <div>
+            <strong>
+              A newer revision is saved
+            </strong>
+            <p id="conflictMessage">
+            </p>
+          </div>
+          <div class="button-row">
+            <button class="button button-small" id="downloadRecoveryButton" type="button">
+              Download unsaved edits
+            </button>
+            <button class="button button-small" id="discardConflictButton" type="button">
+              Use latest saved revision
+            </button>
+          </div>
+        </div>
+        <div class="review-workspace panel">
+          <div class="review-navigation">
+            <div class="tab-list" role="tablist" aria-label="Review views">
+              <button class="review-tab is-current" id="tab-diagram" type="button" role="tab" aria-selected="true" aria-controls="diagramView" data-review-tab="diagram">
+                <svg aria-hidden="true">
+                  <use href="#i-flow"/>
+                </svg>
+                Diagram
+              </button>
+              <button class="review-tab" id="tab-findings" type="button" role="tab" aria-selected="false" aria-controls="findingsView" data-review-tab="findings">
+                <svg aria-hidden="true">
+                  <use href="#i-info"/>
+                </svg>
+                Findings
+                <span id="findingsCount" class="tab-count">
+                  0
+                </span>
+              </button>
+              <button class="review-tab" id="tab-sources" type="button" role="tab" aria-selected="false" aria-controls="sourcesView" data-review-tab="sources">
+                <svg aria-hidden="true">
+                  <use href="#i-file"/>
+                </svg>
+                Source files
+              </button>
+            </div>
+            <div class="review-tools">
+              <button class="text-button" id="downloadDrawioButton" type="button">
+                <svg aria-hidden="true">
+                  <use href="#i-download"/>
+                </svg>
+                <span>
+                  .drawio
+                </span>
+              </button>
+              <button class="text-button" id="importDrawioButton" type="button">
+                <svg aria-hidden="true">
+                  <use href="#i-upload"/>
+                </svg>
+                <span>
+                  Import
+                </span>
+              </button>
+              <input id="importFile" type="file" accept=".drawio,.xml" hidden>
+            </div>
+          </div>
+          <div class="edit-bar">
+            <span id="saveState" class="save-state">
+              <i>
+              </i>
+              All changes saved
+            </span>
+            <div class="button-row">
+              <button class="icon-button" id="undoButton" type="button" title="Undo (Ctrl/Cmd Z)" aria-label="Undo last change" disabled>
+                <svg aria-hidden="true">
+                  <use href="#i-undo"/>
+                </svg>
+              </button>
+              <button class="icon-button" id="redoButton" type="button" title="Redo (Ctrl/Cmd Shift Z)" aria-label="Redo last change" disabled>
+                <svg aria-hidden="true">
+                  <use href="#i-redo"/>
+                </svg>
+              </button>
+              <span class="toolbar-divider">
+              </span>
+              <button class="text-button" id="discardButton" type="button" disabled>
+                Discard
+              </button>
+              <button class="button button-primary button-small" id="saveChangesButton" type="button" disabled>
+                Save changes
+              </button>
+            </div>
+          </div>
+          <div id="diagramView" role="tabpanel" aria-labelledby="tab-diagram">
+            <div class="canvas-toolbar">
+              <label class="search-control">
+                <svg aria-hidden="true">
+                  <use href="#i-search"/>
+                </svg>
+                <input id="canvasSearch" type="search" placeholder="Find a node or file…" aria-label="Find a node or file in the diagram">
+              </label>
+              <select id="canvasScope" aria-label="Diagram scope">
+                <option value="all">
+                  All connections
+                </option>
+                <option value="neighbors">
+                  Selection + direct neighbors
+                </option>
+              </select>
+              <div class="button-row">
+                <button class="button button-small" id="addNodeButton" type="button">
+                  <svg aria-hidden="true">
+                    <use href="#i-plus"/>
+                  </svg>
+                  Add node
+                </button>
+                <button class="button button-small" id="addEdgeButton" type="button">
+                  <svg aria-hidden="true">
+                    <use href="#i-flow"/>
+                  </svg>
+                  Add connection
+                </button>
+              </div>
+            </div>
+            <div class="editor-layout">
+              <div class="canvas-region">
+                <svg id="graphCanvas" class="graph-canvas" role="group" aria-label="Editable workflow diagram" aria-describedby="canvasHelp" tabindex="0">
+                </svg>
+                <div id="emptyCanvas" class="empty-canvas" hidden>
+                  <svg aria-hidden="true">
+                    <use href="#i-search"/>
+                  </svg>
+                  <strong>
+                    No nodes in this view
+                  </strong>
+                  <p>
+                    Try a different search or clear the filter.
+                  </p>
+                </div>
+                <div class="canvas-floating">
+                  <span id="canvasVisibleCount">
+                  </span>
+                  <div class="zoom-controls">
+                    <button class="icon-button" type="button" id="zoomOutButton" aria-label="Zoom out">
+                      −
+                    </button>
+                    <span id="zoomLevel">
+                      100%
+                    </span>
+                    <button class="icon-button" type="button" id="zoomInButton" aria-label="Zoom in">
+                      +
+                    </button>
+                    <button class="icon-button" type="button" id="fitButton" aria-label="Fit diagram to view">
+                      <svg aria-hidden="true">
+                        <use href="#i-fit"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <aside id="inspector" class="inspector" aria-label="Selected node or connection">
+              </aside>
+            </div>
+            <div class="canvas-footer">
+              <span id="canvasHelp">
+                Drag nodes to arrange · drag background to pan · scroll to zoom
+              </span>
+              <span class="legend">
+                <i>
+                </i>
+                Confirmed
+                <span class="legend-proposed">
+                  <i>
+                  </i>
+                  Unconfirmed
+                </span>
+              </span>
+            </div>
+          </div>
+          <div id="findingsView" class="findings-view" role="tabpanel" aria-labelledby="tab-findings" hidden>
+            <div class="findings-heading">
+              <div>
+                <h3>
+                  Know what needs a second look.
+                </h3>
+                <p>
+                  Limited dependency resolution differs from a file that could not be parsed.
+                </p>
+              </div>
+              <button class="button button-small" id="suggestButton" type="button">
+                <svg aria-hidden="true">
+                  <use href="#i-sparkles"/>
+                </svg>
+                Suggest connections with AI
+              </button>
+            </div>
+            <div class="findings-filters">
+              <label class="search-control">
+                <svg aria-hidden="true">
+                  <use href="#i-search"/>
+                </svg>
+                <input id="findingsSearch" type="search" placeholder="Filter by file or message" aria-label="Filter findings">
+              </label>
+              <select id="findingsSeverity" aria-label="Finding severity">
+                <option value="all">
+                  All findings
+                </option>
+                <option value="error">
+                  Analysis errors
+                </option>
+                <option value="warning">
+                  Needs review
+                </option>
+                <option value="info">
+                  Informational
+                </option>
+              </select>
+            </div>
+            <div id="proposedConnections">
+            </div>
+            <div id="findingsList">
+            </div>
+          </div>
+          <div id="sourcesView" class="sources-view" role="tabpanel" aria-labelledby="tab-sources" hidden>
+            <div class="findings-heading">
+              <div>
+                <h3>
+                  Source coverage
+                </h3>
+                <p>
+                  Analysis reads supported files without executing the project.
+                </p>
+              </div>
+              <label class="search-control">
+                <svg aria-hidden="true">
+                  <use href="#i-search"/>
+                </svg>
+                <input id="sourcesSearch" type="search" placeholder="Find a source file" aria-label="Find a source file">
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>
+                      Source file
+                    </th>
+                    <th>
+                      Type
+                    </th>
+                    <th>
+                      Analysis
+                    </th>
+                    <th>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="sourceRows">
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="stage-footer">
+          <p id="reviewFooterNote">
+            Your saved connections are used exactly as reviewed.
+          </p>
+          <button class="button button-primary" id="goGenerateButton" type="button">
+            Continue to Generate
+            <svg aria-hidden="true">
+              <use href="#i-arrow"/>
+            </svg>
+          </button>
+        </div>
+      </section>
+      <!--
+      Generate: attach context to an explicitly saved revision.
+      - AI remains opt-in, with its provider controls hidden until requested.
+      - Warnings require the same explicit acknowledgement as before the visual refresh.
+      - Artifact URLs come from the backend; the UI must not construct local file paths.
+      -->
+      <section id="generatePanel" class="stage-panel" aria-label="Generate the finished flowchart" hidden>
+        <div class="generation-grid">
+          <div class="panel generation-settings">
+            <div class="panel-heading section-title">
+              <span class="heading-icon" aria-hidden="true">
+                <svg aria-hidden="true">
+                  <use href="#i-sparkles"/>
+                </svg>
+              </span>
+              <h2>
+                3. Generate Flow Chart
+              </h2>
+              <p>
+                We’ll add script summaries and interactions to the saved diagram.
+              </p>
+            </div>
+            <div id="generationReadiness">
+            </div>
+            <form id="generationForm" class="stack-form">
+              <label class="option-card">
+                <input id="useLlmSummaries" type="checkbox">
+                <span>
+                  <strong>
+                    Enhance summaries with AI
+                  </strong>
+                  <small>
+                    Optional. Sends saved source text to the selected provider. Connections stay unchanged.
+                  </small>
+                </span>
+              </label>
+              <div id="providerFields" class="provider-fields" hidden>
+                <div class="two-columns">
+                  <label class="field">
+                    <span>
+                      Provider
+                    </span>
+                    <select id="model">
+                      <option value="OpenAI">
+                        OpenAI / configured Azure
+                      </option>
+                      <option value="Ollama">
+                        Ollama · local model
+                      </option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>
+                      Summary language
+                    </span>
+                    <select id="language">
+                      <option value="English">
+                        English
+                      </option>
+                      <option value="Japanese">
+                        Japanese
+                      </option>
+                    </select>
+                  </label>
+                </div>
+                <details class="advanced-settings">
+                  <summary>
+                    Model performance settings
+                  </summary>
+                  <div class="two-columns">
+                    <label class="field">
+                      <span>
+                        Concurrent requests
+                      </span>
+                      <input id="maxConcurrency" type="number" min="1" max="16" step="1" value="3" required>
+                    </label>
+                    <label class="field">
+                      <span>
+                        Timeout per request (seconds)
+                      </span>
+                      <input id="timeoutSeconds" type="number" min="1" max="300" step="1" value="90" required>
+                    </label>
+                  </div>
+                  <p class="quiet-note">
+                    For a local model, try one concurrent request and a longer timeout. Higher concurrency can make each request slower.
+                  </p>
+                </details>
+                <p class="quiet-note">
+                  If the provider is unavailable, the result identifies any fallback to local descriptions.
+                </p>
+              </div>
+              <p class="local-summary-note" id="localSummaryNote">
+                <svg aria-hidden="true">
+                  <use href="#i-shield"/>
+                </svg>
+                Local descriptions · English · no model calls
+              </p>
+              <label id="proposedOption" class="checkbox-line" hidden>
+                <input id="allowProposedEdges" type="checkbox">
+                <span>
+                  Include unconfirmed connections, visibly marked as suggestions.
+                </span>
+              </label>
+              <label id="incompleteOption" class="checkbox-line" hidden>
+                <input id="acknowledgeIncomplete" type="checkbox">
+                <span>
+                  I reviewed the analysis errors and accept a visibly incomplete flowchart.
+                </span>
+              </label>
+              <div class="form-footer">
+                <button class="button button-primary" id="generateButton" type="submit">
+                  Generate Flow Chart
+                  <svg aria-hidden="true">
+                    <use href="#i-arrow"/>
+                  </svg>
+                </button>
+              </div>
+            </form>
+            <p class="generation-footnote">
+              Generation uses this saved revision. It won’t run analysis again or silently alter your connections.
+            </p>
+          </div>
+          <aside class="generation-result" id="generationResult">
+          </aside>
+        </div>
+      </section>
+      <footer class="workspace-footer">
+        <span>
+          DA Document Generator
+        </span>
+        <span>
+          Local first. Human reviewed.
+        </span>
+      </footer>
+    </main>
+    <!--
+    Dialogs and settings.
+    - Native dialogs retain Escape handling, focus containment and return focus.
+    - Theme radios use text, swatches and a checkmark so colour is not the only cue.
+    - Appearance changes never submit jobs, alter graphs or enable AI requests.
+    -->
+    <dialog id="editorDialog" class="app-dialog">
+      <form id="editorDialogForm">
+        <div class="dialog-heading">
+          <h2 id="editorDialogTitle">
+            Add node
+          </h2>
+          <button class="icon-button" type="button" data-close-dialog="editorDialog" aria-label="Close editor dialog">
+            <svg aria-hidden="true">
+              <use href="#i-close"/>
+            </svg>
+          </button>
+        </div>
+        <div id="editorDialogFields" class="stack-form">
+        </div>
+        <p id="editorDialogError" class="inline-error" role="alert" hidden>
+        </p>
+        <div class="dialog-actions">
+          <button class="button" type="button" data-close-dialog="editorDialog">
+            Cancel
+          </button>
+          <button class="button button-primary" type="submit" id="editorDialogSubmit">
+            Add node
+          </button>
+        </div>
       </form>
-    </section>
-
-    <section class="section-block progress-section" aria-labelledby="progress-title">
-      <div class="progress-header">
-        <h2 id="progress-title">Current Progress</h2>
-        <span id="progressStageLabel" class="progress-stage-label">Waiting</span>
+    </dialog>
+    <dialog id="confirmDialog" class="app-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <h2 id="confirmTitle">
+          </h2>
+          <button class="icon-button" type="submit" value="cancel" aria-label="Close confirmation">
+            <svg aria-hidden="true">
+              <use href="#i-close"/>
+            </svg>
+          </button>
+        </div>
+        <p id="confirmDescription">
+        </p>
+        <div class="dialog-actions">
+          <button class="button" type="submit" value="cancel">
+            Cancel
+          </button>
+          <button class="button button-primary" id="confirmAction" type="submit" value="confirm">
+            Confirm
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="settingsDialog" class="app-dialog">
+      <div class="dialog-heading">
+        <h2>
+          App settings
+        </h2>
+        <button class="icon-button" type="button" data-close-dialog="settingsDialog" aria-label="Close app settings">
+          <svg aria-hidden="true">
+            <use href="#i-close"/>
+          </svg>
+        </button>
       </div>
-
-      <div class="progress-track" aria-hidden="true">
-        <span id="progressTrackFill" class="progress-track-fill"></span>
+      <div class="settings-section">
+        <h3>
+          <svg aria-hidden="true">
+            <use href="#i-palette"/>
+          </svg>
+          Appearance
+        </h3>
+        <p>
+          A little colour, your way. Your choice is saved in this browser and applies to the app interface.
+        </p>
+        <fieldset id="themeOptions" class="theme-options">
+          <legend>
+            Accent theme
+          </legend>
+          <label class="theme-choice" data-theme-option="blue">
+            <input type="radio" name="accentTheme" value="blue" checked>
+            <span class="theme-swatch" aria-hidden="true">
+            </span>
+            <span>
+              Blue
+            </span>
+            <svg aria-hidden="true">
+              <use href="#i-check"/>
+            </svg>
+          </label>
+          <label class="theme-choice" data-theme-option="violet">
+            <input type="radio" name="accentTheme" value="violet">
+            <span class="theme-swatch" aria-hidden="true">
+            </span>
+            <span>
+              Violet
+            </span>
+            <svg aria-hidden="true">
+              <use href="#i-check"/>
+            </svg>
+          </label>
+          <label class="theme-choice" data-theme-option="graphite">
+            <input type="radio" name="accentTheme" value="graphite">
+            <span class="theme-swatch" aria-hidden="true">
+            </span>
+            <span>
+              Graphite
+            </span>
+            <svg aria-hidden="true">
+              <use href="#i-check"/>
+            </svg>
+          </label>
+        </fieldset>
+        <p class="quiet-note" id="themeStatus" role="status">
+          Blue theme selected.
+        </p>
       </div>
-
-      <ol id="progressSteps" class="progress-steps" aria-label="Analysis progress">
-        <li class="progress-step" data-stage-index="0">
-          <span class="progress-step-marker"></span>
-          <span>Paths Received</span>
-        </li>
-        <li class="progress-step" data-stage-index="1">
-          <span class="progress-step-marker"></span>
-          <span>Scripts Found</span>
-        </li>
-        <li class="progress-step" data-stage-index="2">
-          <span class="progress-step-marker"></span>
-          <span>Dependencies</span>
-        </li>
-        <li class="progress-step" data-stage-index="3">
-          <span class="progress-step-marker"></span>
-          <span>Workflow</span>
-        </li>
-        <li class="progress-step" data-stage-index="4">
-          <span class="progress-step-marker"></span>
-          <span>Summaries</span>
-        </li>
-        <li class="progress-step" data-stage-index="5">
-          <span class="progress-step-marker"></span>
-          <span>Outputs</span>
-        </li>
-      </ol>
-    </section>
-
-    <section class="section-block run-log-section" aria-labelledby="run-log-title">
-      <div class="run-log-header">
-        <h2 id="run-log-title">Run Log</h2>
-        <span id="runLogStatus" class="run-log-status">Waiting</span>
+      <div class="settings-section">
+        <h3>
+          <svg aria-hidden="true">
+            <use href="#i-shield"/>
+          </svg>
+          Safe to close the browser
+        </h3>
+        <p>
+          Jobs continue while the local server is running. Reopening the launcher brings you back to your saved workflows. Unsubmitted edits are kept in this browser.
+        </p>
+        <p>
+          After an unexpected server stop, unfinished jobs are marked interrupted. Review their status before choosing Retry.
+        </p>
       </div>
-
-      <div id="runLogPanel" class="run-log-panel" aria-live="polite">
-        <div class="run-log-empty">Run messages will appear here after analysis starts.</div>
+      <div class="settings-section">
+        <h3>
+          <svg aria-hidden="true">
+            <use href="#i-terminal"/>
+          </svg>
+          Local server
+        </h3>
+        <p id="serverDetails">
+          Checking connection…
+        </p>
+        <button class="button button-danger" id="stopServerButton" type="button" disabled>
+          Stop server
+        </button>
+        <p class="quiet-note">
+          Saved drafts remain. Use the launcher to restart the server. Stopping is unavailable while jobs are active.
+        </p>
       </div>
-    </section>
-
-    <section class="section-block" aria-labelledby="outputs-title">
-      <h2 id="outputs-title">2. Output Links</h2>
-
-      <div class="output-grid">
-        <a class="output-card" href="#" data-output-link="da_document">
-          <span class="output-icon">
-            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
-          </span>
-          <span class="output-title">DA Document</span>
-          <span class="output-copy">Open the generated DA document.</span>
-          <span class="output-arrow" aria-hidden="true">-></span>
-        </a>
-
-        <a class="output-card" href="#" data-output-link="flowchart">
-          <span class="output-icon">
-            <svg viewBox="0 0 24 24"><path d="M12 3v5"/><path d="M6 13H4a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H6Z"/><path d="M20 13h-5a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1Z"/><path d="M9 3h6v5H9Z"/><path d="M12 8v2a3 3 0 0 1-3 3H6"/><path d="M12 10a3 3 0 0 0 3 3h2"/></svg>
-          </span>
-          <span class="output-title">Flowchart</span>
-          <span class="output-copy">View the generated application flowchart.</span>
-          <span class="output-arrow" aria-hidden="true">-></span>
-        </a>
-
-        <a class="output-card" href="#" data-output-link="profiles">
-          <span class="output-icon">
-            <svg viewBox="0 0 24 24"><path d="M8 4c-2 0-3 1-3 3v2c0 1.5-.9 2.3-2 2.8 1.1.5 2 1.3 2 2.8V17c0 2 1 3 3 3"/><path d="M16 4c2 0 3 1 3 3v2c0 1.5.9 2.3 2 2.8-1.1.5-2 1.3-2 2.8V17c0 2-1 3-3 3"/></svg>
-          </span>
-          <span class="output-title">Profiles JSON</span>
-          <span class="output-copy">Browse the extracted profiles in JSON format.</span>
-          <span class="output-arrow" aria-hidden="true">-></span>
-        </a>
-
-        <a class="output-card" href="#" data-output-link="network">
-          <span class="output-icon">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><circle cx="5" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M6.5 6.5 10.5 10.5"/><path d="m13.5 10.5 4-4"/><path d="m13.5 13.5 4 4"/><path d="m10.5 13.5-4 4"/></svg>
-          </span>
-          <span class="output-title">Workflow Network</span>
-          <span class="output-copy">Explore the workflow connection network.</span>
-          <span class="output-arrow" aria-hidden="true">-></span>
-        </a>
-
-        <a class="output-card" href="#" data-output-link="summaries">
-          <span class="output-icon">
-            <svg viewBox="0 0 24 24"><path d="M8 4h8a2 2 0 0 1 2 2v14H6V6a2 2 0 0 1 2-2Z"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>
-          </span>
-          <span class="output-title">Summaries</span>
-          <span class="output-copy">Review the analysis summaries and metrics.</span>
-          <span class="output-arrow" aria-hidden="true">-></span>
-        </a>
+    </dialog>
+    <dialog id="activityDialog" class="app-dialog activity-dialog">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">
+            SAVED JOB HISTORY
+          </p>
+          <h2>
+            Activity
+          </h2>
+        </div>
+        <button class="icon-button" type="button" data-close-dialog="activityDialog" aria-label="Close activity">
+          <svg aria-hidden="true">
+            <use href="#i-close"/>
+          </svg>
+        </button>
       </div>
-    </section>
-
-    <div id="statusToast" class="status-toast" aria-live="polite" hidden></div>
-  </main>
-
-  <script src="app.js"></script>
-</body>
+      <p class="muted activity-intro">
+        You can leave this page while a job runs. A lost connection does not mean the operation failed.
+      </p>
+      <div id="activityList">
+      </div>
+    </dialog>
+    <noscript>
+      <div class="notice notice-warning">
+        Enable JavaScript, then reopen the app using its launcher.
+      </div>
+    </noscript>
+    <script type="module" src="/frontend/app.js">
+    </script>
+  </body>
 </html>

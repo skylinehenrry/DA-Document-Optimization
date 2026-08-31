@@ -1,0 +1,5 @@
+# Optional; needed only for LLM suggestions and narrative summaries.
+-r requirements.txt
+langchain-openai>=1.1,<2
+langchain-ollama>=1,<2
+azure-identity>=1.25,<2

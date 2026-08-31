@@ -1,0 +1,6 @@
+# Offline analysis, review API and rendering (tested with Python 3.14).
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+pydantic>=2.10,<3
+sqlglot>=30.15,<31
+defusedxml>=0.7.1,<1

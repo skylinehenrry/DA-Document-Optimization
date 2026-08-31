@@ -1,0 +1,6 @@
+{
+  "name": "da-workflow-interface",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test"}
+}

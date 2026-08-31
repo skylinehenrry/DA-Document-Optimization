@@ -64,8 +64,8 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      font-family: "Cambria Math", Cambria, Georgia, serif;
-      font-weight: 700;
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-weight: 400;
       color: var(--ink);
       background:
         linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,253,0.98)),
@@ -101,13 +101,14 @@
       max-width: 980px;
       color: var(--muted);
       font-size: 13px;
-      font-weight: 700;
+      font-weight: 400;
       line-height: 1.45;
     }
 
     .zoom-controls {
       /* Fixed controls for scaling the canvas without changing the graph data. */
       display: inline-flex;
+      flex: 0 0 auto;
       align-items: center;
       gap: 6px;
       padding: 4px;
@@ -119,6 +120,8 @@
 
     .zoom-button {
       min-width: 34px;
+      padding: 0 8px;
+      white-space: nowrap;
       height: 30px;
       border: 0;
       border-radius: 7px;
@@ -140,6 +143,40 @@
       font-size: 12px;
       font-weight: 800;
       text-align: center;
+    }
+
+    .view-controls {
+      /*
+        - These controls filter presentation only; the reviewed graph stays intact.
+        - Keep labels visible so the direct view and full detail view are distinct.
+        - Wrap controls on narrower screens and when Windows scales the display.
+      */
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 18px;
+      margin-top: 15px;
+      font: 12px/1.5 system-ui, sans-serif;
+      color: #475569;
+    }
+
+    .view-controls label { display: flex; align-items: center; gap: 7px; }
+    .view-controls select {
+      max-width: min(360px, 65vw);
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font: inherit;
+      color: var(--ink);
+      background: white;
+    }
+    .view-controls button { font: inherit; }
+    .view-controls select:focus-visible,
+    .view-controls button:focus-visible { outline: 2px solid #275dad; outline-offset: 2px; }
+    @media (max-width: 680px) {
+      header { padding: 15px; }
+      .header-top { flex-wrap: wrap; gap: 12px; }
+      h1 { font-size: 21px; overflow-wrap: anywhere; }
     }
 
     main {
@@ -550,7 +587,21 @@
         <span id="zoomValue" class="zoom-value">100%</span>
         <button id="zoomIn" class="zoom-button" type="button" aria-label="Zoom in">+</button>
         <button id="zoomReset" class="zoom-button" type="button">Reset</button>
+        <button id="zoomFit" class="zoom-button" type="button">Fit view</button>
       </div>
+    </div>
+    <div class="view-controls" aria-label="Connection view controls">
+      <label for="connectionView">Connections
+        <select id="connectionView">
+          <option value="direct">Direct connections</option>
+          <option value="all">All relationships</option>
+        </select>
+      </label>
+      <label for="focusNode">Focus
+        <select id="focusNode"><option value="">All nodes</option></select>
+      </label>
+      <button id="clearFocus" class="zoom-button" type="button">Clear focus</button>
+      <span id="focusStatus" role="status" aria-live="polite">Showing all nodes</span>
     </div>
   </header>
   <main>
@@ -604,6 +655,8 @@
       - Edge hover labels appear only when the user points at an edge
       - Hovered edges are moved to the top of the SVG so they are not hidden
       - Card hover highlights every edge connected to that card
+      - Direct view groups repeated references without changing stored edges
+      - Focus shows only one node and its immediate incoming/outgoing neighbors
     */
     const allNodes = document.querySelectorAll(".node");
     const scriptNodes = document.querySelectorAll(".script-node");
@@ -622,10 +675,102 @@
     const zoomOut = document.getElementById("zoomOut");
     const zoomIn = document.getElementById("zoomIn");
     const zoomReset = document.getElementById("zoomReset");
+    const zoomFit = document.getElementById("zoomFit");
+    const viewport = document.querySelector("main");
     const edgeGroups = document.querySelectorAll(".edge");
+    const connectionView = document.getElementById("connectionView");
+    const focusNode = document.getElementById("focusNode");
+    const clearFocus = document.getElementById("clearFocus");
+    const focusStatus = document.getElementById("focusStatus");
     const canvasWidth = Number(flowchartCanvas.dataset.canvasWidth);
     const canvasHeight = Number(flowchartCanvas.dataset.canvasHeight);
     let zoom = 1;
+
+    function updateConnectionView() {
+      /*
+        - Switch between grouped connections and the original relationship records.
+        - Follow only edges touching the selected node; never walk another hop.
+        - Keep node coordinates, edge evidence, and embedded graph data unchanged.
+      */
+      flowchartCanvas.classList.toggle("show-all-relationships", connectionView.value === "all");
+      const selected = focusNode.value;
+      const visible = new Set(selected ? [selected] : []);
+      let directCount = 0;
+      edgeGroups.forEach((edge) => {
+        const touchesSelection = !selected || edge.dataset.source === selected || edge.dataset.target === selected;
+        edge.classList.toggle("outside-focus", !touchesSelection);
+        if (touchesSelection) {
+          visible.add(edge.dataset.source);
+          visible.add(edge.dataset.target);
+          if (connectionView.value === "all" || !edge.classList.contains("connection-member")) directCount += 1;
+        }
+      });
+      allNodes.forEach((node) => {
+        node.classList.toggle("outside-focus", Boolean(selected) && !visible.has(node.dataset.nodeId));
+      });
+      focusStatus.textContent = selected
+        ? `${visible.size} nodes · ${directCount} direct ${connectionView.value === "all" ? "relationships" : "connections"}`
+        : `Showing all ${allNodes.length} nodes · ${directCount} ${connectionView.value === "all" ? "relationships" : "direct connections"}`;
+      clearFocus.disabled = !selected;
+      hidePreview();
+      fitVisibleNodes();
+    }
+
+    function fitVisibleNodes() {
+      /*
+        - Changing focus must bring its nodes into view, not leave a blank canvas.
+        - Fit the visible cards with padding for arrows; keep their saved positions.
+        - With no focus use the full drawing bounds, including long routed edges.
+        - Scale and scroll only the viewport; never rewrite graph coordinates.
+      */
+      let left = 0, top = 0, right = canvasWidth, bottom = canvasHeight;
+      if (focusNode.value) {
+        const cards = [...allNodes].filter(node => !node.classList.contains("outside-focus"));
+        if (!cards.length) return;
+        left = Math.max(0, Math.min(...cards.map(node => Number(node.dataset.x))) - 80);
+        top = Math.max(0, Math.min(...cards.map(node => Number(node.dataset.y))) - 80);
+        right = Math.max(...cards.map(node => Number(node.dataset.x) + node.offsetWidth)) + 100;
+        bottom = Math.max(...cards.map(node => Number(node.dataset.y) + node.offsetHeight)) + 100;
+        // - A connector may detour around cards hidden by the focus filter.
+        // - Include its complete route so the visible connection is not clipped.
+        edgeGroups.forEach(edge => {
+          if (edge.classList.contains("outside-focus")) return;
+          if (connectionView.value !== "all" && edge.classList.contains("connection-member")) return;
+          const bounds = edge.getBBox();
+          left = Math.min(left, Math.max(0, bounds.x - 30));
+          top = Math.min(top, Math.max(0, bounds.y - 30));
+          right = Math.max(right, bounds.x + bounds.width + 30);
+          bottom = Math.max(bottom, bounds.y + bounds.height + 30);
+        });
+      }
+      const availableWidth = Math.max(240, viewport.clientWidth - 70);
+      const availableHeight = Math.max(140, viewport.clientHeight - 50);
+      setZoom(Math.min(1, availableWidth / Math.max(1, right - left), availableHeight / Math.max(1, bottom - top)));
+      viewport.scrollLeft = Math.max(0, left * zoom);
+      viewport.scrollTop = Math.max(0, top * zoom);
+    }
+
+    /*
+      - Filenames stay short on cards; duplicate names retain full paths here.
+      - Use textContent rather than HTML so source labels remain inert text.
+      - Options carry stable node IDs, never ambiguous filenames.
+    */
+    const labelCounts = new Map();
+    allNodes.forEach((node) => {
+      const label = node.querySelector(".node-label").textContent;
+      labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
+    });
+    allNodes.forEach((node) => {
+      const label = node.querySelector(".node-label").textContent;
+      const option = document.createElement("option");
+      option.value = node.dataset.nodeId;
+      option.textContent = labelCounts.get(label) > 1 ? `${label} (${node.dataset.sourcePath || node.dataset.nodeId})` : label;
+      option.title = node.title;
+      focusNode.appendChild(option);
+    });
+    connectionView.addEventListener("change", updateConnectionView);
+    focusNode.addEventListener("change", updateConnectionView);
+    clearFocus.addEventListener("click", () => { focusNode.value = ""; updateConnectionView(); });
 
     function setZoom(nextZoom) {
       /*
@@ -634,7 +779,7 @@
         - Scale the canvas using CSS transform
         - Resize the wrapper so browser scrollbars match the scaled size
       */
-      zoom = Math.min(1.6, Math.max(0.45, nextZoom));
+      zoom = Math.min(1.6, Math.max(0.1, nextZoom));
       flowchartCanvas.style.transform = `scale(${zoom})`;
       canvasSizer.style.width = `${canvasWidth * zoom}px`;
       canvasSizer.style.height = `${canvasHeight * zoom}px`;
@@ -782,7 +927,9 @@
     zoomOut.addEventListener("click", () => setZoom(zoom - 0.1));
     zoomIn.addEventListener("click", () => setZoom(zoom + 0.1));
     zoomReset.addEventListener("click", () => setZoom(1));
+    zoomFit.addEventListener("click", fitVisibleNodes);
     setZoom(1);
+    updateConnectionView();
   </script>
 </body>
 </html>
