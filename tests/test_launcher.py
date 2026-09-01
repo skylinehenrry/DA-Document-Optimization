@@ -25,7 +25,8 @@ class LauncherTests(unittest.TestCase):
     def health(self, **overrides):
         return {"app_id": "da-workflow", "project_root": str(launch.PROJECT_DIR),
                 "store_root": str(Path(os.environ.get("DA_WORKFLOW_STORE", launch.PROJECT_DIR / "backend" / ".workflow_store")).expanduser().resolve()),
-                "instance_id": "the-checked-instance", "shutdown_available": True, **overrides}
+                "instance_id": "the-checked-instance", "shutdown_available": True,
+                "version": launch.APP_VERSION, **overrides}
 
     def test_occupied_port_cannot_reopen_another_app_or_another_project(self):
         with self.assertRaisesRegex(launch.LaunchError, "another application"):
@@ -74,6 +75,20 @@ class LauncherTests(unittest.TestCase):
             start.assert_not_called()
             browser.assert_not_called()
 
+    def test_outdated_idle_backend_is_safely_replaced_before_opening_the_frontend(self):
+        current = self.health(pid = 2468, status = "ok")
+        with patch("launch.existing_server", return_value = self.health(version = "2.0")), \
+                patch("launch.stop_server") as stop, \
+                patch("launch.wait_for_server_exit") as wait, \
+                patch("launch.launch_server", return_value = current) as start, \
+                patch("launch.webbrowser.open"), \
+                patch("sys.stdout", new_callable = io.StringIO):
+            self.assertEqual(launch.main(["--port", "8765"]), 0)
+
+        stop.assert_called_once()
+        wait.assert_called_once_with(8765)
+        start.assert_called_once_with(8765, "http://127.0.0.1:8765")
+
     def test_browser_opens_directly_with_a_new_launcher_session(self):
         session_id = "11111111-1111-4111-8111-111111111111"
         with patch("launch.existing_server", return_value = self.health()), \
@@ -113,7 +128,8 @@ class LauncherTests(unittest.TestCase):
             interpreter = str(project / ".venv" / "Scripts" / "python.exe")
             process = SimpleNamespace(pid = 45678, poll = lambda: None, terminate = Mock(), wait = Mock(), kill = Mock())
             health = {"app_id": "da-workflow", "project_root": str(project.resolve()),
-                      "store_root": str(store.resolve()), "instance_id": "started-instance", "pid": process.pid, "status": "ok"}
+                      "store_root": str(store.resolve()), "instance_id": "started-instance", "pid": process.pid,
+                      "status": "ok", "version": launch.APP_VERSION}
             with patch.dict(os.environ, {"DA_WORKFLOW_STORE": str(store)}), \
                     patch("launch.PROJECT_DIR", project.resolve()), patch("launch.sys.executable", interpreter), \
                     patch("launch.importlib.util.find_spec", return_value = object()), \

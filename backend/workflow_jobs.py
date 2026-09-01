@@ -2,9 +2,9 @@
 Run browser actions as durable jobs owned by the local application.
 - Save each request before returning an accepted response to the browser.
 - Reusing its request identifier returns the same job; changed input is rejected.
-- Keep job state and progress in SQLite so a browser reload loses no work.
+- Keep only the job state needed for safe completion and browser recovery.
 - Tag browser jobs with one launcher session so a newly opened command session
-  starts with an empty activity view while a refresh of the same page can recover.
+  starts with empty progress while a refresh of the same page can recover.
 - One operating-system lock permits one worker per store, even when two server
   processes are opened; a second server can still read and submit requests.
 - A stopped process releases that lock automatically. Its successor reconciles
@@ -141,11 +141,11 @@ class WorkerLock:
 
 class JobRepository:
     """
-    Persist job inputs, state changes and progress using short transactions.
+    Persist job inputs and state changes using short transactions.
     - Input payloads stay private; the public job response contains status/result.
     - Request fingerprints prevent accidental reuse of an identifier for new input.
     - A running job is changed only by its recorded worker owner.
-    - Logs are bounded per job so a noisy analysis cannot grow the UI indefinitely.
+    - Per-run progress messages are deliberately neither stored nor returned.
     """
 
     def __init__(self, store: WorkflowStore):
@@ -171,14 +171,6 @@ class JobRepository:
                     updated_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS jobs_state_created ON jobs(state, created_at);
-                CREATE TABLE IF NOT EXISTS job_logs (
-                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                    job_id TEXT NOT NULL REFERENCES jobs(id),
-                    message TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    level TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS job_logs_job ON job_logs(job_id, sequence);
             """)
             # This additive migration also supports stores opened by an earlier
             # build of the job API. Acquire a transaction before checking so two
@@ -190,6 +182,10 @@ class JobRepository:
             if "session_id" not in columns:
                 db.execute("ALTER TABLE jobs ADD COLUMN session_id TEXT")
             db.execute("CREATE INDEX IF NOT EXISTS jobs_session_created ON jobs(session_id, created_at)")
+            # - Earlier builds retained hundreds of progress messages per run.
+            # - The interface no longer exposes run history, so remove the old
+            #   table during startup and never recreate it.
+            db.execute("DROP TABLE IF EXISTS job_logs")
 
     @staticmethod
     def _row(db, job_id: str):
@@ -211,35 +207,20 @@ class JobRepository:
         return "id, request_id, session_id, kind, state, draft_id, error_json, retry_of, created_at, updated_at, " + result_column
 
     @staticmethod
-    def _public(db, row, *, summary: bool = False) -> dict:
+    def _public(row, *, summary: bool = False) -> dict:
         result = json.loads(row["result_json"]) if row["result_json"] else None
         if summary and result is not None:
             # Polling a list must not transfer every saved graph and evidence
             # excerpt. The selected draft or individual job still returns the
             # full result on demand, including its detailed review information.
             result = JobRepository._result_metadata(result)
-        logs = [dict(item) for item in db.execute(
-            "SELECT sequence, message, created_at, level FROM job_logs WHERE job_id=? ORDER BY sequence DESC LIMIT ?",
-            (row["id"], 8 if summary else 500),
-        )]
-        logs.reverse()
-        retained_count = db.execute("SELECT count(*) FROM job_logs WHERE job_id=?", (row["id"],)).fetchone()[0]
         return {
             "id": row["id"], "request_id": row["request_id"], "session_id": row["session_id"], "kind": row["kind"],
             "state": row["state"], "draft_id": row["draft_id"],
             "result": result, "result_complete": not summary,
             "error": json.loads(row["error_json"]) if row["error_json"] else None,
             "retry_of": row["retry_of"], "created_at": row["created_at"], "updated_at": row["updated_at"],
-            "logs": logs, "logs_truncated": retained_count > len(logs),
         }
-
-    @staticmethod
-    def _log(db, job_id: str, message: str, level: str = "info") -> None:
-        db.execute("INSERT INTO job_logs(job_id, message, created_at, level) VALUES (?, ?, ?, ?)",
-                   (job_id, str(message)[:8000], utc_now(), level))
-        db.execute("""DELETE FROM job_logs WHERE job_id=? AND sequence NOT IN
-                   (SELECT sequence FROM job_logs WHERE job_id=? ORDER BY sequence DESC LIMIT 500)""",
-                   (job_id, job_id))
 
     def enqueue(self, request: JobRequest, *, retry_of: str | None = None) -> dict:
         """
@@ -259,7 +240,7 @@ class JobRepository:
             if existing:
                 if existing["fingerprint"] != fingerprint:
                     raise JobConflict("This request identifier was already used with different input. Start a new action instead.")
-                return self._public(db, existing)
+                return self._public(existing)
             if retry_of is not None:
                 previous = self._row(db, retry_of)
                 if previous["state"] not in {"failed", "interrupted"}:
@@ -286,8 +267,7 @@ class JobRepository:
                 job_id, str(request.request_id), str(request.session_id), fingerprint, request.kind, request.draft_id,
                 request.draft_id, json_text(request.payload), retry_of, now, now,
             ))
-            self._log(db, job_id, "Job saved and queued. You can close or reload the browser without cancelling it.")
-            return self._public(db, self._row(db, job_id))
+            return self._public(self._row(db, job_id))
 
     def retry(self, job_id: str, request_id: UUID) -> dict:
         with self.store.connection() as db:
@@ -302,7 +282,7 @@ class JobRepository:
             row = db.execute("SELECT " + self._public_columns() + " FROM jobs WHERE id=?", (job_id,)).fetchone()
             if row is None:
                 raise DraftNotFound(f"Job not found: {job_id}")
-            return self._public(db, row)
+            return self._public(row)
 
     def list(self, limit: int = 100, *, summary: bool = False, session_id: UUID | None = None) -> list[dict]:
         with self.store.connection() as db:
@@ -315,7 +295,7 @@ class JobRepository:
                 arguments = (str(session_id), limit)
             query += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
             rows = db.execute(query, arguments).fetchall()
-            return [self._public(db, row, summary = summary) for row in rows]
+            return [self._public(row, summary = summary) for row in rows]
 
     def busy(self) -> bool:
         with self.store.connection() as db:
@@ -333,18 +313,9 @@ class JobRepository:
                 return None
             db.execute("UPDATE jobs SET state='running', worker_id=?, updated_at=? WHERE id=? AND state='queued'",
                        (worker_id, utc_now(), row["id"]))
-            self._log(db, row["id"], "Job started.")
             claimed = dict(self._row(db, row["id"]))
             claimed["payload"] = json.loads(claimed.pop("payload_json"))
             return claimed
-
-    def append_log(self, job_id: str, worker_id: str, message: str) -> None:
-        with self.store.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
-            row = self._row(db, job_id)
-            if row["state"] == "running" and row["worker_id"] == worker_id:
-                self._log(db, job_id, message)
-                db.execute("UPDATE jobs SET updated_at=? WHERE id=?", (utc_now(), job_id))
 
     def finish(self, job_id: str, state: str, *, result: dict | None = None,
                error: dict | None = None, worker_id: str | None = None) -> None:
@@ -362,8 +333,6 @@ class JobRepository:
                 json_text(error) if error is not None else None,
                 result.get("draft_id", row["draft_id"]) if result else row["draft_id"], utc_now(), job_id,
             ))
-            self._log(db, job_id, "Job completed and saved." if state == "succeeded" else error["message"],
-                      "info" if state == "succeeded" else "warning" if state == "interrupted" else "error")
 
 
 def job_error(error: Exception) -> dict:
@@ -454,26 +423,18 @@ class WorkflowJobs:
     async def _execute(self, job: dict) -> dict:
         request = REQUEST_MODELS[job["kind"]].model_validate(job["payload"])
 
-        def progress(message):
-            # A progress write must not turn a successful graph transaction into
-            # a failed analysis when the log disk itself is temporarily unavailable.
-            try:
-                self.repository.append_log(job["id"], self.instance_id, message)
-            except Exception:
-                log.warning("Could not save progress for %s", job["id"], exc_info = True)
-
         existing = await complete_in_thread(self._saved_result, job["id"])
         if existing is not None:
             return existing
         draft_id, operation_id = job["target_draft_id"], job["id"]
         if job["kind"] == "analyze":
-            graph = await self.service.analyze(request, progress, operation_id = operation_id)
+            graph = await self.service.analyze(request, operation_id = operation_id)
         elif job["kind"] == "generate":
-            manifest = await self.service.generate(draft_id, request, progress, operation_id = operation_id)
+            manifest = await self.service.generate(draft_id, request, operation_id = operation_id)
             graph = await complete_in_thread(self.service.store.load, draft_id, request.expected_revision)
             return await complete_in_thread(self.service.describe, graph, generation_id = manifest["generation_id"])
         elif job["kind"] == "suggest":
-            graph = await self.service.suggest(draft_id, request, progress, operation_id = operation_id)
+            graph = await self.service.suggest(draft_id, request, operation_id = operation_id)
         elif job["kind"] == "import":
             graph = await complete_in_thread(self.service.import_diagram, draft_id, request, operation_id = operation_id)
         else:

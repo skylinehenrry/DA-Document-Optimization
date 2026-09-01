@@ -37,17 +37,15 @@ Create the environment on the computer where you will run the app; a macOS `.ven
 
 The launcher does not install packages or download models automatically. No frontend build or Node installation is needed to run the app. Keep it on `127.0.0.1`; this is a local application for one trusted user.
 
-## Interface appearance
+## Interface
 
-The interface restores the original DA Document Generator style: a simple full-width header, centred numbered sections, thin blue-gray dividers, outlined controls, a horizontal progress tracker, a compact run log and clear output actions. The current Analyze → Review → Generate process remains separate underneath that familiar appearance, so a user still corrects and saves the graph before summaries or interactive output are attached.
+The interface uses a simple full-width header, centred numbered sections, thin blue-gray dividers, outlined controls, a horizontal progress tracker and clear output actions. The Analyze → Review → Generate process remains separate, so a user still corrects and saves the graph before summaries or interactive output are attached.
 
-Choose **Settings → Appearance → Accent theme** to switch between **Blue** (default), **Violet** and **Pink**. The choice applies immediately within the current launcher session. It changes the app interface only, not graph data or previously generated HTML files.
-
-The interface uses the full available browser width. Headings, progress and primary actions are centered, while forms, evidence and inspectors remain left aligned for readability. Forms reflow on smaller screens, and the inspector moves below the diagram. See [frontend design notes](docs/frontend-design.md) for palette tokens, comment conventions and validation details.
+The fixed palette uses blue actions with pink and purple review/status details. The interface uses the full available browser width. Headings, progress and primary actions are centered, while forms, evidence and inspectors remain left aligned for readability. Forms reflow on smaller screens, and the inspector moves below the diagram. See [frontend design notes](docs/frontend-design.md) for palette tokens, comment conventions and validation details.
 
 ## Analyze, review and generate
 
-1. Choose **New analysis** and select the source folder and output folder. **Project name** is optional: leave it blank to use the source folder's name. The output folder is where generated files will be written; this workflow does not create a Word document.
+1. Select the source folder and output folder. **Project name** is optional: leave it blank to use the source folder's name. The output folder is where generated files will be written; this workflow does not create a Word document.
 2. Supply the optional runtime working folder, SQL dialect or shared database namespace only when you know them. These help distinguish resources with similar names. Unknown values should be left blank.
 3. Choose **Analyze project**. The application reads supported source files without running them or calling a model. The job is saved before it begins; you can reopen its progress after a browser reload.
 4. Use **Review → Findings** and **Source files** to check coverage. Findings are grouped by cause, with the original source locations available on expansion. A file that needs dependency review is different from a file that failed analysis.
@@ -55,7 +53,7 @@ The interface uses the full available browser width. Headings, progress and prim
 6. Choose **Save changes** to create a saved revision. **Undo**, **Redo** and **Discard** apply to your local edits. Generation uses a saved revision, so finish saving before proceeding.
 7. Choose **Generate Flow Chart**. Model summaries are enabled in a new session and create both per-script descriptions and an overall project summary. Select OpenAI, Azure OpenAI or Ollama, or clear **Enhance summaries with AI** to use local English descriptions. When finished, choose **Open flowchart** or **Download HTML**.
 
-Every launcher invocation starts a fresh interface and Activity list. Reloading the same launcher URL retains its current recovery state, but running the command file again does not show earlier runs. Private revision data remains available to the backend for integrity and interruption recovery. Generating again from the current session replaces the project-named public HTML file without changing reviewed connections.
+Every launcher invocation starts a fresh interface with an empty progress track. The application does not retain or display per-run progress messages. Reloading the same launcher URL can still recover an accepted operation and unsaved edits, while running the command file again does not show earlier work. Private revision and minimal operation state remain available to the backend for integrity and interruption recovery.
 
 Script and file cards display the filename and extension, such as `load.sql` or `report.py`. Full paths remain available in the inspector/tooltip and saved graph. Files with the same name in different folders keep distinct identities; shortening a label does not merge them.
 
@@ -74,7 +72,7 @@ The optional `.drawio` exchange remains available. Download the draft, edit it i
 | Situation | What happens / what to do |
 | --- | --- |
 | Browser reloads | The same session reconnects to its accepted jobs and browser recovery state. |
-| Browser closes, then the launcher is run again | Accepted backend work can continue, but the new interface starts with an empty Activity list as requested. |
+| Browser closes, then the launcher is run again | Accepted backend work can continue, but the new interface starts with empty progress and no run history. |
 | Launcher command window closes | A backend started by the new launcher continues separately. |
 | Computer restarts or the backend is force-closed | Reopen the launcher. Saved drafts and completed results remain. Queued jobs that never started can proceed; unfinished running work is marked **Interrupted** unless its saved result can be recovered. |
 | **Interrupted** or failed operation | Inspect the error and saved draft before choosing **Retry operation**. An interrupted model request may already have incurred a charge, so it is not automatically repeated. |
@@ -104,7 +102,7 @@ python -m pip install -r requirements-llm.txt
 
 Provider setup is isolated in `backend/model_provider.py`. **OpenAI** uses `OPENAI_API_KEY` and optional `OPENAI_MODEL`. **Azure OpenAI** uses the existing interactive Microsoft sign-in and supports `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` and `AZURE_OPENAI_API_VERSION` overrides. **Ollama** retains the local model configuration. Selecting a provider alone does not contact it.
 
-AI suggestions add unconfirmed connections for review. AI summaries may only supply description text during generation. Source comments and attached text are treated as data, not as instructions to the model. Check the provider configuration and your data-sharing policy before opting in. Azure authentication opens at most one bounded Microsoft sign-in before parallel summaries begin. If that sign-in is closed or times out, the generation records local fallback descriptions instead of opening another login for every source file. Closing the DA Document Generator browser page does not cancel an already accepted job; use **Activity** to inspect it after reopening. Live paid model calls were not exercised for this redesign.
+AI suggestions add unconfirmed connections for review. AI summaries may only supply description text during generation. Source comments and attached text are treated as data, not as instructions to the model. Check the provider configuration and your data-sharing policy before opting in. Azure authentication opens at most one bounded Microsoft sign-in before parallel summaries begin. If that sign-in is closed or times out, the generation records local fallback descriptions instead of opening another login for every source file. Closing the DA Document Generator browser page does not cancel an already accepted job. Live paid model calls were not exercised for this redesign.
 
 If Ollama summaries time out, check that the configured `qwen3.5:9b` model is available on the selected Ollama server. Under **Enhance summaries with AI → Model performance settings**, try **Concurrent requests: 1** and a longer **Timeout per request (seconds)**, up to 300. Alternatively, generate local descriptions while investigating. These settings can help distinguish load/time limits from a configuration problem, but do not guarantee a successful response or establish why a previous request timed out.
 
@@ -139,4 +137,4 @@ python -m unittest discover -s tests -v
 node --test
 ```
 
-Node is needed only for the frontend tests. Automated checks use temporary projects and mocked model responses. The Python suite ran 176 tests (175 passed and one native Windows test skipped on macOS), and all 25 frontend tests passed. Browser checks verified full-width layout, session isolation, analysis, local generation, project overview rendering, the scoped Open link and the single project-named public HTML file. Live model responses and native Windows execution remain unverified on this macOS host.
+Node is needed only for the frontend tests. Automated checks use temporary projects and mocked model responses. The Python suite ran 178 tests (177 passed and one native Windows test skipped on macOS), and all 25 frontend tests passed. Browser checks verified the empty fresh-session progress state, removed history/appearance controls, exact page title, updated backend handshake, analysis submission, full-width layout, local generation, project overview rendering, the scoped Open link and the single project-named public HTML file. Live model responses and native Windows execution remain unverified on this macOS host.

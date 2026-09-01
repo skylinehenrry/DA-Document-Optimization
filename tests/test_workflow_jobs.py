@@ -88,7 +88,7 @@ class JobFixture:
 
 
 class WorkflowJobAPITests(JobFixture, unittest.TestCase):
-    def test_job_history_is_filtered_by_launcher_session(self):
+    def test_job_state_is_filtered_by_launcher_session(self):
         client = self.open_client()
         first_session = uuid4()
         second_session = uuid4()
@@ -157,7 +157,7 @@ class WorkflowJobAPITests(JobFixture, unittest.TestCase):
         self.assertEqual(client.post("/api/jobs", json = changed).status_code, 409)
         self.assertEqual(len(client.get("/api/jobs").json()), 1)
         # No request is held open while the computation proceeds. Re-reading
-        # saved jobs is also all a newly opened browser needs to recover progress.
+        # the current job state is enough to recover completion without run logs.
         release.set()
         completed = self.wait_job(client, job["id"])
         self.assertEqual(completed["state"], "succeeded", completed)
@@ -166,11 +166,38 @@ class WorkflowJobAPITests(JobFixture, unittest.TestCase):
         self.assertNotIn("review", compact["result"])
         self.assertFalse(compact["result_complete"])
         self.assertEqual(compact["result"]["outputs"], completed["result"]["outputs"])
-        self.assertLessEqual(len(compact["logs"]), 8)
+        self.assertNotIn("logs", compact)
+        self.assertNotIn("logs_truncated", compact)
         self.assertIn("graph", client.get(f"/api/jobs/{job['id']}").json()["result"])
         self.assertEqual(len(client.get("/api/drafts").json()), 1)
         self.assertFalse(self.sentinel.exists())
         self.provider.assert_not_called()
+
+    def test_old_run_logs_are_deleted_and_never_recreated(self):
+        # - Simulate the table left by a previous application version.
+        # - Reopening the repository removes those messages and no job response
+        #   exposes a per-run log field.
+        with self.service.store.connection() as db:
+            db.execute("""CREATE TABLE job_logs (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                level TEXT NOT NULL
+            )""")
+            db.execute(
+                "INSERT INTO job_logs(job_id, message, created_at, level) VALUES (?, ?, ?, ?)",
+                ("old_job", "old run message", "2026-01-01T00:00:00+00:00", "info"),
+            )
+
+        repository = JobRepository(self.service.store)
+        with self.service.store.connection() as db:
+            table = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='job_logs'"
+            ).fetchone()
+        self.assertIsNone(table)
+        job = repository.enqueue(self.request())
+        self.assertNotIn("logs", job)
 
     def test_jobs_are_serialized_and_conflicting_revisions_fail_visibly(self):
         client = self.open_client()

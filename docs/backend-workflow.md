@@ -41,7 +41,7 @@ flowchart LR
     N --> H[Interactive HTML and audit artifacts]
 ```
 
-The five job kinds are `analyze`, `edit`, `import`, `suggest` and `generate`. A submission receives HTTP 202 after the request is saved. Its state is `queued`, `running`, `succeeded`, `failed` or `interrupted`; status and bounded progress logs live in SQLite rather than a process-global run buffer.
+The five job kinds are `analyze`, `edit`, `import`, `suggest` and `generate`. A submission receives HTTP 202 after the request is saved. Its state is `queued`, `running`, `succeeded`, `failed` or `interrupted`. SQLite retains only the operation state needed for completion, idempotency and interruption recovery; per-run progress messages are not stored.
 
 ### Submission, ownership and recovery
 
@@ -53,7 +53,7 @@ The five job kinds are `analyze`, `edit`, `import`, `suggest` and `generate`. A 
 - Interrupted model requests are not automatically repeated: the remote provider may have processed or charged for a request whose response never arrived. Local commit recovery cannot establish whether an uncommitted remote request was billed.
 - Cancelling an asynchronous wrapper does not stop a filesystem/database thread. The job manager waits for in-flight local writes before releasing worker ownership. SQLite transactions and operation receipts handle process termination around commit boundaries; this is not a guarantee against disk loss, deleted databases or corrupted storage.
 
-Each job retains at most its latest 500 log entries, with messages bounded to 8,000 characters. A storage error is reported and the worker attempts to recover rather than silently leaving the queue behind a dead task. Work is serialized at the job level; optional per-source model concurrency is separately limited.
+The worker reports coarse state to the current-session progress display without retaining a message history. A storage error is reported in the application diagnostics and the worker attempts to recover rather than silently leaving the queue behind a dead task. Work is serialized at the job level; optional per-source model concurrency is separately limited.
 
 There is no general cancellation endpoint. Normal managed shutdown refuses queued/running jobs; closing the browser is not cancellation. Force-closing the backend is an interruption, not a clean way to cancel a remote model request.
 
@@ -236,7 +236,7 @@ curl -sS http://127.0.0.1:8000/api/jobs \
 curl -sS http://127.0.0.1:8000/api/jobs/JOB_ID
 ```
 
-The initial response is a saved job with an `id`, `request_id`, `kind`, `state`, timestamps, logs, and eventual `result` or `error`. On success, `result` contains the draft description: graph, review, settings, outputs and applicable generation. The request payload is retained privately and is not echoed as a separate public job field. If the POST response is lost, resend the same file; do not create a new UUID until starting a genuinely new action.
+The initial response is a saved job with an `id`, `request_id`, `kind`, `state`, timestamps, and eventual `result` or `error`. It contains no per-run log. On success, `result` contains the draft description: graph, review, settings, outputs and applicable generation. The request payload is retained privately and is not echoed as a separate public job field. If the POST response is lost, resend the same file; do not create a new UUID until starting a genuinely new action.
 
 Save a revision-specific generation request as `generate-job.json`:
 
@@ -257,7 +257,7 @@ Post it to `/api/jobs` and poll its returned job ID. `edit`, `import` and `sugge
 | Method and path | Purpose |
 | --- | --- |
 | `POST /api/jobs` | Validate and durably submit any of the five job kinds; HTTP 202. |
-| `GET /api/jobs` | List jobs newest first; the browser supplies `session_id` so Activity contains only the current launcher session. Optional `limit` is 1–1,000. |
+| `GET /api/jobs` | Read minimal operation state; the browser supplies `session_id` so only the current launcher session can affect progress. Optional `limit` is 1–1,000. |
 | `GET /api/jobs/{id}` | Load current state, result/error and saved progress. |
 | `POST /api/jobs/{id}/retry` | Explicit retry of a failed/interrupted job using `{"request_id":"NEW_UUID"}`; HTTP 202. |
 | `GET /api/health` | Read application/instance/store identity and worker availability. |
@@ -347,11 +347,11 @@ After reviewing unresolved proposals or errors, `generate` can accept `--allow-p
 
 This is a trusted local-user application. Loopback binding, allowed-host and same-origin checks reduce unintended access, but do not supply a multi-user authorization design. Do not expose it publicly or through a network proxy without a separate security review.
 
-Keep `DA_WORKFLOW_STORE` outside `frontend/` and other publicly served directories, on a local disk with appropriate permissions. Snapshots, job payloads, logs, caches and history can contain sensitive paths or source context; the SQLite store is neither encrypted nor tamper-proof. Optional model operations disclose saved source/context to the selected provider. Exported diagrams and generated HTML/JSON can expose filenames, resource names, excerpts and summaries. Review them before sharing.
+Keep `DA_WORKFLOW_STORE` outside `frontend/` and other publicly served directories, on a local disk with appropriate permissions. Snapshots, job payloads, caches and revision history can contain sensitive paths or source context; the SQLite store is neither encrypted nor tamper-proof. Optional model operations disclose saved source/context to the selected provider. Exported diagrams and generated HTML/JSON can expose filenames, resource names, excerpts and summaries. Review them before sharing.
 
 Virtual environments are platform-specific and should be recreated on the target machine. Source/output paths belong to that machine too: copying a saved database between macOS and Windows does not translate its absolute filesystem paths. Use valid local paths when creating new analyses and retain backups before moving an existing store.
 
-The current store schema adds job and receipt records while retaining saved GraphDocument drafts, revisions and generation manifests. Older synchronous runs do not acquire a fabricated job history. Older HTML remains unchanged; regenerate to apply the new presentation. New analyses use extractor version 1.1. Legacy `WorkflowDependencyGraph`/`FlowchartSpec` JSON is not interchangeable with GraphDocument 1.0 and is not automatically imported. DOCX generation remains unimplemented, and no Word-document download is advertised.
+The current store schema retains minimal job and receipt records alongside saved GraphDocument drafts, revisions and generation manifests. Startup deletes the obsolete `job_logs` table from older stores. Older HTML remains unchanged; regenerate to apply the new presentation. New analyses use extractor version 1.1. Legacy `WorkflowDependencyGraph`/`FlowchartSpec` JSON is not interchangeable with GraphDocument 1.0 and is not automatically imported. DOCX generation remains unimplemented, and no Word-document download is advertised.
 
 Automated checks cover static extraction and conservative scope handling; atomic edits and revision conflicts; diagram import/security; saved snapshots and deletion suppression; model fallback; rendering invariants; durable submission/recovery and artifact access; launcher behavior; and frontend state/transport recovery. Run the commands in the README for the current suite. Tests use temporary synthetic projects and mocked models rather than executing user workflows or making paid calls.
 

@@ -44,6 +44,7 @@ BACKEND_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BACKEND_DIR.parent
 FRONTEND_DIR = PROJECT_DIR / "frontend"
 APP_ID = "da-workflow"
+APP_VERSION = "2.1"
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -133,7 +134,7 @@ def create_app(service: WorkflowService | None = None, *, shutdown_callback: Cal
         finally:
             await application.state.workflow_jobs.stop()
 
-    application = FastAPI(title = "DA Workflow", version = "2.0", lifespan = lifespan)
+    application = FastAPI(title = "DA Workflow", version = APP_VERSION, lifespan = lifespan)
     application.state.workflow_service = service or default_service()
     application.state.instance_id = "instance_" + uuid4().hex
     application.state.started_at = utc_now()
@@ -203,7 +204,7 @@ def create_app(service: WorkflowService | None = None, *, shutdown_callback: Cal
         """
         manager = getattr(application.state, "workflow_jobs", None)
         return {"status": "stopping" if application.state.stopping else "ok", "app_id": APP_ID,
-                "version": "2.0", "instance_id": application.state.instance_id, "pid": os.getpid(),
+                "version": APP_VERSION, "instance_id": application.state.instance_id, "pid": os.getpid(),
                 "project_root": str(PROJECT_DIR), "store_root": str(application.state.workflow_service.store.directory),
                 "started_at": application.state.started_at,
                 "worker_state": manager.worker_state if manager is not None else "starting",

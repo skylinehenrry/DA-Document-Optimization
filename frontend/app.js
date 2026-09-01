@@ -1,7 +1,7 @@
 /*
 Application controller for DA Document Generator.
 
-- Scope activity, form recovery and the selected draft to one launcher session.
+- Scope form recovery and the selected draft to one launcher session.
 - Submit analysis, edits, imports and generation as persistent background jobs.
 - Keep the exact request ID before submission, so a lost response cannot start
   duplicate analysis or duplicate paid model requests when connectivity returns.
@@ -22,6 +22,7 @@ const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const readable = value => String(value ?? "").replaceAll("_", " ");
 const jobNames = {analyze: "Project analysis", edit: "Save diagram changes", import: "Import corrected diagram", generate: "Flowchart generation", suggest: "AI connection suggestions"};
 const activeStates = new Set(["queued", "running"]);
+const requiredBackendVersion = "2.1";
 const sessionURL = new URL(location.href);
 let sessionId = sessionURL.searchParams.get("session");
 if (!sessionId || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(sessionId)) {
@@ -49,28 +50,6 @@ function on(id, event, handler) {
     try { await handler(value); } catch (error) { showError(error); }
   });
 }
-/*
-Apply the user's accent theme without touching workflow data.
-- Accept only the three named palettes defined in styles.css.
-- Keep this preference separate from recovery requests and draft revisions.
-- Update the native radio controls and status text as well as the visible colours.
-- If storage is blocked, retain the current appearance and explain that it is
-  temporary; a cosmetic preference must never block analysis or saving.
-*/
-function applyAppearance(value, {persist = false} = {}) {
-  const themes = {blue: "Blue", violet: "Violet", pink: "Pink"};
-  const theme = typeof value === "string" && Object.hasOwn(themes, value) ? value : "blue";
-  document.documentElement.dataset.theme = theme;
-  document.querySelectorAll('input[name="accentTheme"]').forEach(input => {
-    input.checked = input.value === theme;
-  });
-  $("themeStatus").textContent = `${themes[theme]} theme selected.`;
-  if (persist) {
-    try { storage.write("appearance.theme", theme); }
-    catch { $("themeStatus").textContent = `${themes[theme]} is active for this page. Browser storage is unavailable, so this choice cannot be saved.`; }
-  }
-}
-
 function dateText(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -165,7 +144,8 @@ function setStep(step) {
   const currentIndex = stepOrder.indexOf(step);
   for (const name of ["analyze", "review", "generate"]) $(name + "Panel").hidden = name !== step;
   document.querySelectorAll("[data-step]").forEach(button => {
-    const current = button.dataset.step === step;
+    const fresh = !state.selected && !currentJob() && !pending.value;
+    const current = !fresh && button.dataset.step === step;
     button.classList.toggle("is-current", current);
     button.classList.toggle("is-complete", stepOrder.indexOf(button.dataset.step) < currentIndex || (button.dataset.step === "generate" && Boolean(state.selected?.generation)));
     if (current) button.setAttribute("aria-current", "step"); else button.removeAttribute("aria-current");
@@ -174,7 +154,6 @@ function setStep(step) {
   if (step === "review") requestAnimationFrame(() => editor.applyView());
   if (step === "generate") renderGeneration();
   renderProgress();
-  renderRunLog();
   savePreferences();
 }
 
@@ -190,7 +169,7 @@ Keep the historical Current Progress treatment aligned with durable state.
 function renderProgress() {
   const job = currentJob();
   const generated = Boolean(state.selected?.generation && artifactURL(state.selected?.outputs?.flowchart));
-  const widths = {analyze: state.selected ? 34 : 4, review: 67, generate: generated ? 100 : 84};
+  const widths = {analyze: state.selected ? 34 : 0, review: 67, generate: generated ? 100 : 84};
   let label = state.step === "analyze" ? "Ready" : state.step === "review" ? "Workflow review" : generated ? "Outputs ready" : "Ready to generate";
   let width = widths[state.step] ?? 4;
   if (job && activeStates.has(job.state)) {
@@ -245,7 +224,7 @@ function takeDraft(result, {fit = false, step = null, completedRequest = null} =
   const same = previous?.base.id === result.draft_id;
   let recovered = same && (previous.dirty || previous.conflict) ? previous.recovery() : storage.read(`edits.${result.draft_id}`);
   // - If the page closed between accepting a job and saving its UI selection,
-  //   recognize its durable request ID from job history before declaring a
+  //   recognize its durable request ID from saved operation state before declaring a
   //   stale-edit conflict against the revision that very job already saved.
   const savedEdit = recovered?.submitted_request_id && state.jobs.find(job => job.kind === "edit" && job.state === "succeeded" &&
     job.request_id === recovered.submitted_request_id && (job.draft_id ?? job.result?.draft_id) === result.draft_id);
@@ -269,7 +248,6 @@ function takeDraft(result, {fit = false, step = null, completedRequest = null} =
   safeWrite("last-draft", result);
   $("projectTitle").textContent = result.graph.title;
   $("projectSubtitle").textContent = result.graph.project_root;
-  $("breadcrumbTitle").textContent = result.graph.title;
   $("revisionPill").hidden = false;
   $("revisionPill").textContent = `Revision ${result.revision} · ${result.status === "generated" ? "Generated" : "Saved draft"}`;
   renderReview();
@@ -285,20 +263,6 @@ async function loadDraft(id, {step = "review", quiet = false} = {}) {
   takeDraft(result, {fit: id !== state.selectedId, step});
   if (!quiet) $("appMessage").hidden = true;
 }
-function newAnalysis() {
-  persistEdits();
-  ++state.loadToken;
-  state.selected = null; state.session = null; state.selectedId = null; state.selection = null;
-  state.optionsForDraft = null;
-  $("projectTitle").textContent = "Project analysis";
-  $("projectSubtitle").textContent = "Select the source and output folders to begin.";
-  $("breadcrumbTitle").textContent = "New analysis";
-  $("revisionPill").hidden = true;
-  $("appMessage").hidden = true;
-  setStep("analyze"); renderControls();
-  $("workflowName").focus();
-}
-
 function renderReview() {
   if (!state.session) return;
   const graph = state.session.graph;
@@ -411,7 +375,7 @@ function renderInspector() {
   const selection = state.selection;
   const element = $("inspector");
   if (!selection) {
-    element.innerHTML = `<div class="inspector-icon">${icon("flow")}</div><p class="eyebrow">THE DETAILS MATTER</p><h3>Select a node or connection</h3><p>Inspect its source evidence, adjust its details, or reconnect an arrow. Changes stay local until you save.</p><label class="field"><span>Jump to a node</span><select id="jumpNode"><option value="">Choose a node…</option>${nodeOptions()}</select></label><div class="inspector-section"><h4>Connection direction</h4><p class="muted">Reads: resource → reader<br>Writes: writer → resource<br>Imports / calls: caller → dependency<br>Workflow wiring: predecessor → successor</p></div>`;
+    element.innerHTML = `<div class="inspector-icon">${icon("flow")}</div><h3>Select a node or connection</h3><p>Inspect its source evidence, adjust its details, or reconnect an arrow. Changes stay local until you save.</p><label class="field"><span>Jump to a node</span><select id="jumpNode"><option value="">Choose a node…</option>${nodeOptions()}</select></label><div class="inspector-section"><h4>Connection direction</h4><p class="muted">Reads: resource → reader<br>Writes: writer → resource<br>Imports / calls: caller → dependency<br>Workflow wiring: predecessor → successor</p></div>`;
     return;
   }
   if (selection.type === "node") {
@@ -609,7 +573,7 @@ async function recoverPending() {
     if (!job) return;
     state.watchJobId = job.id;
     state.jobs = [job, ...state.jobs.filter(item => item.id !== job.id)];
-    savePreferences(); renderActivity(); renderTaskNotice(); renderControls();
+    savePreferences(); renderTaskNotice(); renderControls();
     await handleWatchedJob();
   } catch (error) {
     // - Unknown responses remain recoverable with their existing key.
@@ -657,7 +621,6 @@ function renderTaskNotice() {
   const uncertain = pending.value;
   const job = currentJob();
   renderProgress();
-  renderRunLog();
   if (uncertain) {
     element.hidden = false;
     element.className = "notice task-notice notice-warning";
@@ -668,46 +631,7 @@ function renderTaskNotice() {
   const active = activeStates.has(job.state);
   element.hidden = false;
   element.className = `notice task-notice ${active ? "" : "notice-warning"}`;
-  element.innerHTML = `${active ? '<span class="spinner" aria-hidden="true"></span>' : icon("info")}<div><strong>${esc(jobNames[job.kind] ?? "Operation")} · ${esc(readable(job.state))}</strong><p>${esc(active ? job.logs?.at(-1)?.message ?? "The operation is saved. You can close this browser while the server works." : job.error?.message ?? "Review the saved operation status before retrying.")}</p></div><button type="button" class="button button-small" data-open-activity>Details</button>${!active ? `<button type="button" class="button button-small" data-retry-job="${esc(job.id)}">Retry operation</button>` : ""}`;
-}
-
-/*
-Render the compact log used by the restored analysis screen.
-
-- Messages come from the backend's retained job log; the preview never invents
-  parser progress or infer success from a browser connection.
-- Only the newest entries are shown here. The Activity drawer keeps the complete
-  retained history, retry controls and interrupted-job explanations.
-- All backend text is escaped before insertion because a source filename or parser
-  message may contain characters that have meaning in HTML.
-*/
-function renderRunLog() {
-  const job = currentJob() ?? state.jobs[0];
-  const status = $("runLogStatus");
-  const preview = $("runLogPreview");
-  if (!job) {
-    status.className = "badge info";
-    status.textContent = pending.value ? "Recovering" : "Ready";
-    preview.innerHTML = `<p class="run-log-empty">${pending.value ? "Recovering the saved request when the local server reconnects." : "No operations yet. Start an analysis to see progress here."}</p>`;
-    return;
-  }
-  const active = activeStates.has(job.state);
-  status.className = `badge ${job.state === "failed" ? "error" : job.state === "interrupted" ? "warning" : active ? "" : "info"}`;
-  status.textContent = readable(job.state);
-  const entries = (job.logs ?? []).slice(-7);
-  if (!entries.length) {
-    preview.innerHTML = `<p class="run-log-row"><span class="run-log-dot" aria-hidden="true"></span><time>${esc(dateText(job.created_at))}</time><span>${esc(jobNames[job.kind] ?? readable(job.kind))} · ${esc(readable(job.state))}</span></p>`;
-    return;
-  }
-  preview.innerHTML = entries.map(log => `<p class="run-log-row"><span class="run-log-dot" aria-hidden="true"></span><time>${esc(dateText(log.created_at))}</time><span>${esc(log.message)}</span></p>`).join("");
-}
-
-function renderActivity() {
-  const openIds = new Set([...$("activityList").querySelectorAll("details[open]")].map(details => details.dataset.logsFor));
-  const active = state.jobs.filter(job => activeStates.has(job.state)).length;
-  $("activityCount").hidden = !active; $("activityCount").textContent = active;
-  $("activityList").innerHTML = state.jobs.length ? state.jobs.map(job => `<article class="job-card"><div class="job-card-header"><h3>${esc(jobNames[job.kind] ?? job.kind)}</h3><span class="badge ${job.state === "failed" ? "error" : job.state === "interrupted" ? "warning" : ""}">${esc(readable(job.state))}</span></div><time>${esc(dateText(job.created_at))}</time>${job.error?.message ? `<p>${esc(job.error.message)}</p>` : ""}<div class="button-row">${job.draft_id ? `<button type="button" class="button" data-draft="${esc(job.draft_id)}">Open workflow</button>` : ""}${["failed", "interrupted"].includes(job.state) ? `<button type="button" class="button" data-retry-job="${esc(job.id)}">Retry operation</button>` : ""}${job.result?.outputs?.flowchart && artifactURL(job.result.outputs.flowchart) ? `<a class="button" href="${esc(artifactURL(job.result.outputs.flowchart))}" target="_blank" rel="noopener noreferrer">Open this result</a>` : ""}</div><details data-logs-for="${esc(job.id)}" ${openIds.has(job.id) ? "open" : ""}><summary>Run details</summary><div class="job-logs">${(job.logs ?? []).map(log => `<p><time>${esc(dateText(log.created_at))}</time>${esc(log.message)}</p>`).join("") || "No run messages yet."}</div>${job.logs_truncated ? `<button type="button" class="text-button" data-load-log="${esc(job.id)}">Load full retained log</button>` : ""}</details></article>`).join("") : '<div class="empty-state"><h3>No operations yet</h3><p>Analysis, edits, imports and generation will appear here.</p></div>';
-  renderRunLog(); renderProgress(); renderControls();
+  element.innerHTML = `${active ? '<span class="spinner" aria-hidden="true"></span>' : icon("info")}<div><strong>${esc(jobNames[job.kind] ?? "Operation")} · ${esc(readable(job.state))}</strong><p>${esc(active ? "The operation is running." : job.error?.message ?? "Review the error before retrying.")}</p></div>${!active ? `<button type="button" class="button button-small" data-retry-job="${esc(job.id)}">Retry operation</button>` : ""}`;
 }
 
 /*
@@ -722,6 +646,7 @@ async function synchronize(force = false) {
   try {
     const health = await request("/api/health", {timeout: 4500});
     if (health.app_id !== "da-workflow") throw new Error("This address is serving a different application. Reopen DA Document Generator with its launcher.");
+    if (health.version !== requiredBackendVersion) throw new Error("The backend is from an older application version. Run the launcher again so it can update the local server.");
     if (health.status !== "ok") throw new Error("The local server is stopping. Reopen the launcher to continue.");
     const restarted = state.health && state.health.instance_id !== health.instance_id;
     state.health = health; state.online = true;
@@ -732,7 +657,7 @@ async function synchronize(force = false) {
     if (restarted) showMessage("The server is back. This session has reconnected; interrupted work will not restart automatically.");
     await recoverPending();
     // - Poll only jobs created by this launcher session. Previous sessions remain
-    //   private backend recovery data and never repopulate the activity interface.
+    //   private recovery metadata and never affect the current progress display.
     const jobs = await request(`/api/jobs?summary=true&session_id=${encodeURIComponent(sessionId)}`);
     state.jobs = jobs.map(job => {
         const existing = state.jobs.find(item => item.id === job.id);
@@ -743,7 +668,7 @@ async function synchronize(force = false) {
       const belongsToSession = state.jobs.some(job => (job.draft_id ?? job.result?.draft_id) === state.selectedId);
       if (belongsToSession) await loadDraft(state.selectedId, {step: state.step === "analyze" ? "review" : state.step, quiet: true});
     }
-    renderActivity(); renderTaskNotice(); renderControls();
+    renderTaskNotice(); renderControls();
   } catch (error) {
     state.online = false;
     $("connectionStatus").dataset.state = "offline";
@@ -799,7 +724,6 @@ function undo(redo = false) {
 }
 on("undoButton", "click", () => undo());
 on("redoButton", "click", () => undo(true));
-on("newAnalysisButton", "click", newAnalysis);
 on("reconnectButton", "click", () => { state.stopping = false; return synchronize(true); });
 on("goGenerateButton", "click", () => setStep("generate"));
 on("canvasSearch", "input", () => editor.setFilter({query: $("canvasSearch").value}));
@@ -868,10 +792,6 @@ for (const id of formFields) on(id, "input", savePreferences);
 for (const id of [...optionFields, "useLlmSummaries"]) on(id, "change", () => { saveOptions(); renderGeneration(); });
 for (const id of ["allowProposedEdges", "acknowledgeIncomplete"]) on(id, "change", renderControls);
 on("settingsButton", "click", () => { renderControls(); $("settingsDialog").showModal(); });
-on("activityButton", "click", () => { renderActivity(); $("activityDialog").showModal(); });
-on("themeOptions", "change", event => {
-  if (event.target.name === "accentTheme") applyAppearance(event.target.value, {persist: true});
-});
 on("stopServerButton", "click", async () => {
   if (!await confirmAction("Stop the local server?", "This session will disconnect until you run the launcher again. Active jobs must finish before the server can be stopped.", "Stop server")) return;
   persistEdits();
@@ -893,7 +813,6 @@ document.addEventListener("click", async event => {
     else if (target.dataset.reviewTab) setReviewTab(target.dataset.reviewTab);
     else if (target.hasAttribute("data-dismiss-message")) $("appMessage").hidden = true;
     else if (target.dataset.closeDialog) $(target.dataset.closeDialog).close();
-    else if (target.dataset.draft) { $("activityDialog").close(); await loadDraft(target.dataset.draft, {step: "review"}); }
     else if (target.dataset.selectEdge) selectItem({type: "edge", id: target.dataset.selectEdge});
     else if (target.dataset.focusNode) { setStep("review"); selectItem({type: "node", id: target.dataset.focusNode}, {focus: true}); }
     else if (target.dataset.connectFrom) openEditorDialog("edge", target.dataset.connectFrom);
@@ -903,11 +822,9 @@ document.addEventListener("click", async event => {
     else if (target.dataset.reconnectGroup) openEditorDialog("group", target.dataset.reconnectGroup);
     else if (target.dataset.confirmEdge) updateEdge(target.dataset.confirmEdge, {status: "confirmed"});
     else if (target.dataset.retryJob) await retryJob(target.dataset.retryJob);
-    else if (target.hasAttribute("data-open-activity")) { renderActivity(); $("activityDialog").showModal(); }
     else if (target.hasAttribute("data-go-review")) setStep("review");
     else if (target.dataset.download) await downloadArtifact(target.dataset.download);
     else if (target.hasAttribute("data-download-recovery")) downloadRecovery();
-    else if (target.dataset.loadLog) { const job = await request(`/api/jobs/${encodeURIComponent(target.dataset.loadLog)}`); state.jobs = state.jobs.map(item => item.id === job.id ? job : item); renderActivity(); }
     else if (target.dataset.expandGroup) { const group = target.dataset.expandGroup; state.expandedGroups.add(group); renderFindings(); $("findingsList").querySelector(`[data-group="${CSS.escape(group)}"]`).open = true; }
     else if (target.dataset.folderTarget) {
       const input = $(target.dataset.folderTarget); target.disabled = true;
@@ -942,15 +859,12 @@ window.addEventListener("beforeunload", event => {
   if (state.storageUnsafe && state.session?.dirty) { event.preventDefault(); event.returnValue = ""; }
 });
 window.addEventListener("storage", event => {
-  // - A palette change in another tab affects appearance only, never its graph.
-  if (event.key === null || event.key === storage.prefix + "appearance.theme") applyAppearance(storage.read("appearance.theme"));
   if (event.key?.includes(".pending-request.")) synchronize(true);
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) synchronize(true); });
 
 // - Populate only this launcher session before connecting. A different launcher
 //   URL has a different prefix and therefore starts with an empty interface.
-applyAppearance(storage.read("appearance.theme"));
 for (const id of formFields) if (preferences.form?.[id] !== undefined) $(id).value = preferences.form[id];
 const cached = storage.read("last-draft");
 if (cached?.draft_id === state.selectedId && cached.graph) {

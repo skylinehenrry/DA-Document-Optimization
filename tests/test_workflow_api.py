@@ -199,6 +199,10 @@ class WorkflowAPITests(unittest.TestCase):
         self.assertEqual(frontend.headers["x-frame-options"], "DENY")
         self.assertEqual(frontend.headers["content-security-policy"], "frame-ancestors 'none'")
         self.assertEqual(frontend.headers["referrer-policy"], "no-referrer")
+        self.assertIn("<title>DA Document Generator</title>", frontend.text)
+        for removed in ("Run Log", "Activity", "Appearance", "New analysis",
+                        "Reads files. Never runs your scripts.", "Local first. Human reviewed."):
+            self.assertNotIn(removed, frontend.text)
         self.assertEqual(self.client.get("/api/drafts", headers = {"host": "untrusted.example"}).status_code, 400)
         rejected = self.client.post("/api/drafts", headers = {"origin": "https://untrusted.example"}, json = {})
         self.assertEqual(rejected.status_code, 403)

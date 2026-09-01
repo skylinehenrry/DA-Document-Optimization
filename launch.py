@@ -29,6 +29,7 @@ import webbrowser
 
 PROJECT_DIR = Path(__file__).resolve().parent
 APP_ID = "da-workflow"
+APP_VERSION = "2.1"
 
 
 class LaunchError(RuntimeError):
@@ -189,6 +190,26 @@ def stop_server(base_url: str, health: dict) -> None:
     print("Shutdown requested. Saved drafts and finished flowcharts remain available next time.")
 
 
+def wait_for_server_exit(port: int, timeout: float = 12) -> None:
+    """Wait until an outdated managed backend releases its loopback port.
+
+    - An upgrade uses the backend's normal shutdown endpoint and never kills an
+      unknown process by its process identifier.
+    - Starting the replacement only after the port closes prevents the browser
+      from mixing a new frontend with an old request schema.
+    """
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout = 0.3):
+                pass
+        except (ConnectionRefusedError, TimeoutError, OSError):
+            return
+        time.sleep(0.2)
+    raise LaunchError("The previous backend did not stop in time. Wait a moment, then run the launcher again.")
+
+
 def launch_server(port: int, base_url: str) -> dict:
     """Start a detached server and wait for a verified readiness response.
 
@@ -252,6 +273,8 @@ def launch_server(port: int, base_url: str) -> dict:
                 health = local_json(base_url + "/api/health", timeout = 1)
                 check_identity(health)
                 if health.get("status") == "ok":
+                    if health.get("version") != APP_VERSION:
+                        raise LaunchError("The newly started backend reported an unexpected application version.")
                     if health.get("pid") != process.pid:
                         raise LaunchError("Another launcher started the app at the same time. Reopen this launcher to use it.")
                     return health
@@ -300,6 +323,15 @@ def main(arguments: list[str] | None = None) -> int:
             else:
                 print("The local backend is already stopped.")
             return 0
+        if health is not None and health.get("version") != APP_VERSION:
+            # - Static frontend files update immediately, but an already-running
+            #   Python process still has its older validation models in memory.
+            # - Replace an idle managed instance before opening the browser so a
+            #   new field such as session_id cannot be rejected by stale code.
+            print("Updating the local backend...", flush = True)
+            stop_server(base_url, health)
+            wait_for_server_exit(args.port)
+            health = None
         if health is None:
             print("Starting DA Document Generator...", flush = True)
             health = launch_server(args.port, base_url)

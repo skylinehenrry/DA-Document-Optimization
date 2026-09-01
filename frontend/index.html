@@ -1,13 +1,12 @@
 <!doctype html>
-<html lang="en" data-theme="blue">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
     <meta name="theme-color" content="#ffffff">
-    <title>
-      DA Document Generator
-    </title>
+    <title>DA Document Generator</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/frontend/styles.css">
   </head>
   <body>
@@ -88,22 +87,9 @@
           <path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/>
           <path d="m8 12 3 3 5-6"/>
         </symbol>
-        <symbol id="i-clock" viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="9"/>
-          <path d="M12 7v6l4 2"/>
-        </symbol>
         <symbol id="i-info" viewBox="0 0 24 24">
           <circle cx="12" cy="12" r="9"/>
           <path d="M12 11v6m0-10v1"/>
-        </symbol>
-        <symbol id="i-menu" viewBox="0 0 24 24">
-          <path d="M4 6h16M4 12h16M4 18h16"/>
-        </symbol>
-        <symbol id="i-grid" viewBox="0 0 24 24">
-          <rect x="3" y="3" width="7" height="7" rx="1.5"/>
-          <rect x="14" y="3" width="7" height="7" rx="1.5"/>
-          <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-          <rect x="14" y="14" width="7" height="7" rx="1.5"/>
         </symbol>
         <symbol id="i-sparkles" viewBox="0 0 24 24">
           <path d="m12 3 2.7 6.3L21 12l-6.3 2.7L12 21l-2.7-6.3L3 12l6.3-2.7L12 3ZM20 2v4m-2-2h4"/>
@@ -119,10 +105,6 @@
           <rect x="2" y="3" width="20" height="18" rx="3"/>
           <path d="m6 8 4 4-4 4m7 0h5"/>
         </symbol>
-        <symbol id="i-palette" viewBox="0 0 24 24">
-          <path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1.4-3.4 1.5 1.5 0 0 1 1.1-2.6H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9Z"/>
-          <path d="M7 9h.01M11 6h.01M16 8h.01M6 14h.01" stroke-width="3"/>
-        </symbol>
       </defs>
     </svg>
     <a class="skip-link" href="#mainContent">
@@ -130,11 +112,7 @@
     </a>
     <main class="workspace" id="mainContent">
       <div class="topbar">
-        <div class="topbar-start">
-          <button class="text-button" id="newAnalysisButton" type="button">
-            <svg aria-hidden="true"><use href="#i-plus"/></svg>
-            New analysis
-          </button>
+        <div class="topbar-start" aria-hidden="true">
         </div>
         <div class="app-identity">
           <span class="app-identity-mark" aria-hidden="true">
@@ -145,9 +123,6 @@
           <strong>
             DA Document Generator
           </strong>
-          <span id="breadcrumbTitle" class="current-project">
-            New analysis
-          </span>
         </div>
         <div class="topbar-actions">
           <span class="connection-status" id="connectionStatus" role="status">
@@ -155,14 +130,6 @@
             </i>
             Connecting
           </span>
-          <button class="text-button" id="activityButton" type="button">
-            <svg aria-hidden="true">
-              <use href="#i-clock"/>
-            </svg>
-            Activity
-            <span class="activity-count" id="activityCount" hidden>
-            </span>
-          </button>
           <button class="text-button" id="settingsButton" type="button">
             <svg aria-hidden="true"><use href="#i-settings"/></svg>
             Settings
@@ -171,9 +138,6 @@
       </div>
       <header class="page-heading">
         <div>
-          <p class="eyebrow">
-            WORKFLOW STUDIO
-          </p>
           <h1 id="projectTitle">
             Project analysis
           </h1>
@@ -308,12 +272,6 @@
                     <use href="#i-arrow"/>
                   </svg>
                 </button>
-                <span class="quiet-note">
-                  <svg aria-hidden="true">
-                    <use href="#i-shield"/>
-                  </svg>
-                  Reads files. Never runs your scripts.
-                </span>
               </div>
             </form>
           </div>
@@ -321,10 +279,10 @@
         </div>
       </section>
       <!--
-      Shared workflow progress and compact activity preview.
+      Shared workflow progress.
       - The three stages stay navigable after a draft exists.
-      - The progress line reflects saved workflow state, not an invented percentage.
-      - Recent messages come from durable backend jobs and link to full activity.
+      - A fresh launcher session leaves the track and stage cards neutral.
+      - Active and completed states come from the current operation only.
       -->
       <section class="progress-card" aria-labelledby="progressHeading">
         <div class="progress-heading">
@@ -341,7 +299,7 @@
         </div>
         <ol class="workflow-steps" aria-label="Workflow stages">
           <li>
-            <button type="button" data-step="analyze" class="step-button is-current" aria-current="step">
+            <button type="button" data-step="analyze" class="step-button">
               <span class="step-number" aria-hidden="true">
                 <svg aria-hidden="true">
                   <use href="#i-folder"/>
@@ -392,29 +350,6 @@
             </button>
           </li>
         </ol>
-      </section>
-      <section class="run-log-panel" id="runLogPanel" aria-labelledby="runLogHeading">
-        <div class="section-heading">
-          <h2 id="runLogHeading">
-            Run Log
-          </h2>
-          <div class="button-row">
-            <span class="badge info" id="runLogStatus">
-              Ready
-            </span>
-            <button class="text-button" type="button" data-open-activity>
-              <svg aria-hidden="true">
-                <use href="#i-clock"/>
-              </svg>
-              View all
-            </button>
-          </div>
-        </div>
-        <div class="run-log-preview" id="runLogPreview" role="log" aria-live="polite">
-          <p class="run-log-empty">
-            No operations yet. Start an analysis to see progress here.
-          </p>
-        </div>
       </section>
       <!--
       Review: edit the draft before attaching summaries.
@@ -634,7 +569,7 @@
             <div class="findings-heading">
               <div>
                 <h3>
-                  Know what needs a second look.
+                  Analysis findings
                 </h3>
                 <p>
                   Limited dependency resolution differs from a file that could not be parsed.
@@ -859,16 +794,12 @@
         <span>
           DA Document Generator
         </span>
-        <span>
-          Local first. Human reviewed.
-        </span>
       </footer>
     </main>
     <!--
-    Dialogs and settings.
+    Dialogs and server settings.
     - Native dialogs retain Escape handling, focus containment and return focus.
-    - Theme radios use text, swatches and a checkmark so colour is not the only cue.
-    - Appearance changes never submit jobs, alter graphs or enable AI requests.
+    - Server controls never alter graph topology or provider preferences.
     -->
     <dialog id="editorDialog" class="app-dialog">
       <form id="editorDialogForm">
@@ -933,58 +864,6 @@
       <div class="settings-section">
         <h3>
           <svg aria-hidden="true">
-            <use href="#i-palette"/>
-          </svg>
-          Appearance
-        </h3>
-        <p>
-          Choose a blue, pink or purple accent for this session.
-        </p>
-        <fieldset id="themeOptions" class="theme-options">
-          <legend>
-            Accent theme
-          </legend>
-          <label class="theme-choice" data-theme-option="blue">
-            <input type="radio" name="accentTheme" value="blue" checked>
-            <span class="theme-swatch" aria-hidden="true">
-            </span>
-            <span>
-              Blue
-            </span>
-            <svg aria-hidden="true">
-              <use href="#i-check"/>
-            </svg>
-          </label>
-          <label class="theme-choice" data-theme-option="violet">
-            <input type="radio" name="accentTheme" value="violet">
-            <span class="theme-swatch" aria-hidden="true">
-            </span>
-            <span>
-              Violet
-            </span>
-            <svg aria-hidden="true">
-              <use href="#i-check"/>
-            </svg>
-          </label>
-          <label class="theme-choice" data-theme-option="pink">
-            <input type="radio" name="accentTheme" value="pink">
-            <span class="theme-swatch" aria-hidden="true">
-            </span>
-            <span>
-              Pink
-            </span>
-            <svg aria-hidden="true">
-              <use href="#i-check"/>
-            </svg>
-          </label>
-        </fieldset>
-        <p class="quiet-note" id="themeStatus" role="status">
-          Blue theme selected.
-        </p>
-      </div>
-      <div class="settings-section">
-        <h3>
-          <svg aria-hidden="true">
             <use href="#i-shield"/>
           </svg>
           Safe to close the browser
@@ -1012,28 +891,6 @@
         <p class="quiet-note">
           Run the launcher again to start a fresh session. Stopping is unavailable while jobs are active.
         </p>
-      </div>
-    </dialog>
-    <dialog id="activityDialog" class="app-dialog activity-dialog">
-      <div class="dialog-heading">
-        <div>
-          <p class="eyebrow">
-            SAVED JOB HISTORY
-          </p>
-          <h2>
-            Activity
-          </h2>
-        </div>
-        <button class="icon-button" type="button" data-close-dialog="activityDialog" aria-label="Close activity">
-          <svg aria-hidden="true">
-            <use href="#i-close"/>
-          </svg>
-        </button>
-      </div>
-      <p class="muted activity-intro">
-        You can leave this page while a job runs. A lost connection does not mean the operation failed.
-      </p>
-      <div id="activityList">
       </div>
     </dialog>
     <noscript>
