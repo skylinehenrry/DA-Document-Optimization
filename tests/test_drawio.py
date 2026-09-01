@@ -1,4 +1,11 @@
-"""Review files must preserve server provenance and all intentional topology edits."""
+"""Verify that draw.io review files preserve topology and server provenance.
+
+- Round trips retain stable IDs, source ownership, labels, positions, and evidence.
+- User additions, deletions, reconnections, and relabeling return as explicit edits.
+- Unsupported pages, groups, ports, labels, and malformed XML fail visibly instead
+  of silently dropping part of the reviewed workflow.
+- Fixtures are local XML only; no browser, source execution, or provider is used.
+"""
 
 from __future__ import annotations
 
@@ -16,21 +23,21 @@ from backend.graph_models import Evidence, GraphDocument, GraphEdge, GraphNode, 
 
 def example_graph() -> GraphDocument:
     return GraphDocument(
-        id="graph_review", revision=7, title="Data workflow", project_root="/project",
-        source_digest="c" * 64,
-        sources=[SourceFile(path="first.py", sha256="a" * 64, script_type="python", size_bytes=20)],
-        nodes=[
-            GraphNode(id="n_first", label="First <step> & checks", kind="script", source_path="first.py", script_type="python", position=Position(x=-12.5, y=15), details={"protected": "server summary"}),
-            GraphNode(id="n_second", label="Second", kind="process", position=Position(x=460, y=15)),
-            GraphNode(id="n_third", label="Third", kind="table", resource_key="db:third", position=Position(x=460, y=190)),
+        id = "graph_review", revision = 7, title = "Data workflow", project_root = "/project",
+        source_digest = "c" * 64,
+        sources = [SourceFile(path = "first.py", sha256 = "a" * 64, script_type = "python", size_bytes = 20)],
+        nodes = [
+            GraphNode(id = "n_first", label = "First <step> & checks", kind = "script", source_path = "first.py", script_type = "python", position = Position(x = -12.5, y = 15), details = {"protected": "server summary"}),
+            GraphNode(id = "n_second", label = "Second", kind = "process", position = Position(x = 460, y = 15)),
+            GraphNode(id = "n_third", label = "Third", kind = "table", resource_key = "db:third", position = Position(x = 460, y = 190)),
         ],
-        edges=[
-            GraphEdge(id="e_reads", source="n_first", target="n_second", kind="reads", condition="if ready", evidence=[Evidence(source_path="first.py", line_start=2, line_end=2, excerpt="read_input()", extractor="python_ast")]),
-            GraphEdge(id="e_calls", source="n_first", target="n_second", kind="calls", label="invoke", origin="llm", status="proposed", evidence=[Evidence(source_path="first.py", line_start=3, excerpt="run()", extractor="llm_candidate")]),
-            GraphEdge(id="e_return", source="n_second", target="n_first", kind="control_flow"),
-            GraphEdge(id="e_loop", source="n_second", target="n_second", kind="control_flow", label="retry"),
+        edges = [
+            GraphEdge(id = "e_reads", source = "n_first", target = "n_second", kind = "reads", condition = "if ready", evidence = [Evidence(source_path = "first.py", line_start = 2, line_end = 2, excerpt = "read_input()", extractor = "python_ast")]),
+            GraphEdge(id = "e_calls", source = "n_first", target = "n_second", kind = "calls", label = "invoke", origin = "llm", status = "proposed", evidence = [Evidence(source_path = "first.py", line_start = 3, excerpt = "run()", extractor = "llm_candidate")]),
+            GraphEdge(id = "e_return", source = "n_second", target = "n_first", kind = "control_flow"),
+            GraphEdge(id = "e_loop", source = "n_second", target = "n_second", kind = "control_flow", label = "retry"),
         ],
-        analysis_options={"protected": True},
+        analysis_options = {"protected": True},
     )
 
 
@@ -39,7 +46,7 @@ def parse_export(graph: GraphDocument) -> ET.Element:
 
 
 def serialize(root: ET.Element) -> str:
-    return ET.tostring(root, encoding="unicode")
+    return ET.tostring(root, encoding = "unicode")
 
 
 def graph_root(root: ET.Element) -> ET.Element:
@@ -80,8 +87,8 @@ def compress_export(root: ET.Element, *, raw_xml: str | None = None) -> str:
     model = page.find("mxGraphModel")
     assert model is not None
     xml = raw_xml if raw_xml is not None else serialize(model)
-    compressor = zlib.compressobj(wbits=-zlib.MAX_WBITS)
-    encoded = quote(xml, safe="~()*!.'-").encode("utf-8")
+    compressor = zlib.compressobj(wbits = -zlib.MAX_WBITS)
+    encoded = quote(xml, safe = "~()*!.'-").encode("utf-8")
     compressed = compressor.compress(encoded) + compressor.flush()
     page.remove(model)
     page.text = base64.b64encode(compressed).decode("ascii")
@@ -118,7 +125,7 @@ class DrawioRoundtripTests(unittest.TestCase):
         root = parse_export(self.graph)
         mxcell(find_entry(root, "e_reads")).set("target", "n_third")
         graph_root(root).remove(find_entry(root, "e_return"))
-        add_edge(root, "user_connector", "n_third", "n_first", value="reads")
+        add_edge(root, "user_connector", "n_third", "n_first", value = "reads")
         reviewed = import_drawio(self.graph, serialize(root))
         edges = {edge.id: edge for edge in reviewed.edges}
         self.assertNotIn("e_return", edges)
@@ -165,7 +172,7 @@ class DrawioRoundtripTests(unittest.TestCase):
         copied.set("script_type", "python")
         copied.set("details", '{"protected": "forged"}')
         graph_root(root).append(copied)
-        add_edge(root, "45", "123-new-copy", "n_second", daKind="calls", value="Run")
+        add_edge(root, "45", "123-new-copy", "n_second", daKind = "calls", value = "Run")
         reviewed = import_drawio(self.graph, serialize(root))
         new_node = reviewed.nodes[-1]
         new_edge = reviewed.edges[-1]
@@ -197,7 +204,7 @@ class DrawioRoundtripTests(unittest.TestCase):
         edge.set("status", "proposed")
         edge.set("condition", "forged")
         reviewed = import_drawio(self.graph, serialize(root))
-        self.assertEqual(reviewed.nodes[0].position, Position(x=-70.125, y=0))
+        self.assertEqual(reviewed.nodes[0].position, Position(x = -70.125, y = 0))
         self.assertEqual(reviewed.nodes[0].label, "Renamed script")
         self.assertEqual(reviewed.nodes[0].source_path, "first.py")
         self.assertEqual(reviewed.nodes[0].details, self.graph.nodes[0].details)
@@ -280,7 +287,7 @@ class DrawioRoundtripTests(unittest.TestCase):
     def test_formatted_new_labels_are_converted_to_plain_text(self) -> None:
         root = parse_export(self.graph)
         add_node(root, "user_node", "<div><b>Check &amp; validate</b></div><div>Next step</div>")
-        add_edge(root, "user_edge", "n_first", "user_node", value="<i>yes</i>")
+        add_edge(root, "user_edge", "n_first", "user_node", value = "<i>yes</i>")
         reviewed = import_drawio(self.graph, serialize(root))
         self.assertEqual(reviewed.nodes[-1].label, "Check & validate\nNext step")
         self.assertEqual(reviewed.edges[-1].label, "yes")
@@ -304,7 +311,7 @@ class DrawioValidationTests(unittest.TestCase):
 
     def test_wrong_graph_and_stale_revision_are_rejected(self) -> None:
         for property_name, value, message in (("daGraphId", "another_graph", "different graph"), ("daRevision", "6", "stale"), ("daRevision", "7.0", "revision")):
-            with self.subTest(property=property_name, value=value):
+            with self.subTest(property = property_name, value = value):
                 root = parse_export(self.graph)
                 root.find("./diagram/mxGraphModel").set(property_name, value)
                 self.assert_rejected(root, message)
@@ -358,7 +365,7 @@ class DrawioValidationTests(unittest.TestCase):
 
     def test_malformed_geometry_numeric_values_are_rejected(self) -> None:
         for value in ("NaN", "Infinity", "-inf", "1e999", "1_000", "100px", "1000001", ""):
-            with self.subTest(value=value):
+            with self.subTest(value = value):
                 root = parse_export(self.graph)
                 find_entry(root, "n_first").find("mxGeometry").set("x", value)
                 self.assert_rejected(root, "numeric")
@@ -370,7 +377,7 @@ class DrawioValidationTests(unittest.TestCase):
 
     def test_external_resources_and_active_html_are_rejected(self) -> None:
         for style in ("html=0;image=https://evil.example/image.svg;", "html=0;fillColor=url(https://evil.example);", "shape=image;image=data:image/svg+xml,evil;"):
-            with self.subTest(style=style):
+            with self.subTest(style = style):
                 root = parse_export(self.graph)
                 find_entry(root, "n_first").set("style", style)
                 self.assert_rejected(root, "resources")
@@ -380,12 +387,12 @@ class DrawioValidationTests(unittest.TestCase):
         # These are real top-level settings serialized by Editor.getGraphXml,
         # not just image= styles on individual cells.
         for name, value in (("backgroundImage", '{"src":"https://evil.example/bg.svg"}'), ("extFonts", "RemoteFont^https://evil.example/font.css")):
-            with self.subTest(attribute=name):
+            with self.subTest(attribute = name):
                 root = parse_export(self.graph)
                 root.find("./diagram/mxGraphModel").set(name, value)
                 self.assert_rejected(root, "resources")
         for label in ('<img src="https://evil.example/">', '<script>alert(1)</script>', '<span onclick="alert(1)">x</span>'):
-            with self.subTest(label=label):
+            with self.subTest(label = label):
                 root = parse_export(self.graph)
                 add_node(root, "new_label", label)
                 self.assert_rejected(root, "HTML")
@@ -397,10 +404,10 @@ class DrawioValidationTests(unittest.TestCase):
             '<?xml-stylesheet type="text/xsl" href="https://evil.example/xsl"?><mxfile/>',
             '<mxfile xmlns:x="http://www.w3.org/2001/XInclude"><x:include href="https://evil.example"/></mxfile>',
         ):
-            with self.subTest(xml=xml):
+            with self.subTest(xml = xml):
                 with self.assertRaisesRegex(ValueError, "DTD|instructions|Namespaced"):
                     import_drawio(self.graph, xml)
-        xml = compress_export(parse_export(self.graph), raw_xml='<!DOCTYPE mxGraphModel [<!ENTITY x "bad">]><mxGraphModel/>')
+        xml = compress_export(parse_export(self.graph), raw_xml = '<!DOCTYPE mxGraphModel [<!ENTITY x "bad">]><mxGraphModel/>')
         with self.assertRaisesRegex(ValueError, "DTD"):
             import_drawio(self.graph, xml)
 
@@ -408,7 +415,7 @@ class DrawioValidationTests(unittest.TestCase):
         with patch("backend.drawio.MAX_XML_BYTES", 100):
             with self.assertRaisesRegex(ValueError, "size limit"):
                 import_drawio(self.graph, "<mxfile>" + " " * 101 + "</mxfile>")
-        xml = compress_export(parse_export(self.graph), raw_xml="<mxGraphModel>" + " " * 200_000 + "</mxGraphModel>")
+        xml = compress_export(parse_export(self.graph), raw_xml = "<mxGraphModel>" + " " * 200_000 + "</mxGraphModel>")
         with patch("backend.drawio.MAX_XML_BYTES", 4096):
             with self.assertRaisesRegex(ValueError, "expanded diagram"):
                 import_drawio(self.graph, xml)

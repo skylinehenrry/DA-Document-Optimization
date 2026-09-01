@@ -61,12 +61,14 @@ class BrowseFolderRequest(StrictModel):
     - The user may also type or paste a path when native dialogs are unavailable.
     """
 
-    target: str = Field(min_length=1, max_length=100)
-    current_path: str | None = Field(default=None, max_length=32768)
+    target: str = Field(min_length = 1, max_length = 100)
+    current_path: str | None = Field(default = None, max_length = 32768)
 
 
 class ShutdownRequest(StrictModel):
-    instance_id: str = Field(min_length=1, max_length=100)
+    """Identify the exact managed server instance the launcher intends to stop."""
+
+    instance_id: str = Field(min_length = 1, max_length = 100)
 
 
 def select_folder(initial_dir: Path) -> str | None:
@@ -106,8 +108,8 @@ $dialog.Dispose()
         # - PowerShell otherwise uses a legacy console code page on many systems.
         # - Encode/decode both native dialog results explicitly as UTF-8 so names
         #   containing Japanese text or accented characters remain exact.
-        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=False,
-                                env=environment, timeout=300)
+        result = subprocess.run(command, capture_output = True, text = True, encoding = "utf-8", check = False,
+                                env = environment, timeout = 300)
     except (OSError, UnicodeError, subprocess.TimeoutExpired):
         return None
     return (result.stdout.strip() or None) if result.returncode == 0 else None
@@ -131,7 +133,7 @@ def create_app(service: WorkflowService | None = None, *, shutdown_callback: Cal
         finally:
             await application.state.workflow_jobs.stop()
 
-    application = FastAPI(title="DA Workflow", version="2.0", lifespan=lifespan)
+    application = FastAPI(title = "DA Workflow", version = "2.0", lifespan = lifespan)
     application.state.workflow_service = service or default_service()
     application.state.instance_id = "instance_" + uuid4().hex
     application.state.started_at = utc_now()
@@ -142,7 +144,7 @@ def create_app(service: WorkflowService | None = None, *, shutdown_callback: Cal
     application.state.shutdown_callback = shutdown_callback
     application.include_router(workflow_router)
     application.include_router(job_router)
-    application.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "[::1]"])
+    application.add_middleware(TrustedHostMiddleware, allowed_hosts = ["127.0.0.1", "localhost", "[::1]"])
 
     @application.middleware("http")
     async def protect_local_actions(request: Request, call_next):
@@ -156,11 +158,11 @@ def create_app(service: WorkflowService | None = None, *, shutdown_callback: Cal
             origin = request.headers.get("origin")
             expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
             if (origin is not None and origin != expected) or request.headers.get("sec-fetch-site") == "cross-site":
-                return JSONResponse(status_code=403, content={"detail": "Local workflow requests must come from this application's origin."},
-                                    headers=SECURITY_HEADERS)
+                return JSONResponse(status_code = 403, content = {"detail": "Local workflow requests must come from this application's origin."},
+                                    headers = SECURITY_HEADERS)
             if application.state.stopping:
-                return JSONResponse(status_code=503, content={"detail": "The backend is stopping. Restart it before continuing."},
-                                    headers=SECURITY_HEADERS)
+                return JSONResponse(status_code = 503, content = {"detail": "The backend is stopping. Restart it before continuing."},
+                                    headers = SECURITY_HEADERS)
         response = await call_next(request)
         response.headers.update(SECURITY_HEADERS)
         if request.url.path.startswith("/api/") or request.url.path.startswith("/frontend/"):
@@ -169,27 +171,27 @@ def create_app(service: WorkflowService | None = None, *, shutdown_callback: Cal
 
     @application.exception_handler(RevisionConflict)
     async def revision_conflict_handler(request, error: RevisionConflict):
-        return JSONResponse(status_code=409, content={"detail": str(error), "expected_revision": error.expected,
+        return JSONResponse(status_code = 409, content = {"detail": str(error), "expected_revision": error.expected,
                                                      "current_revision": error.actual})
 
     @application.exception_handler(ReviewRequired)
     @application.exception_handler(JobConflict)
     async def workflow_conflict_handler(request, error):
-        return JSONResponse(status_code=409, content={"detail": str(error)})
+        return JSONResponse(status_code = 409, content = {"detail": str(error)})
 
     @application.exception_handler(DraftNotFound)
     @application.exception_handler(FileNotFoundError)
     async def missing_artifact_handler(request, error):
-        return JSONResponse(status_code=404, content={"detail": str(error)})
+        return JSONResponse(status_code = 404, content = {"detail": str(error)})
 
     @application.exception_handler(ValueError)
     async def invalid_workflow_handler(request, error):
-        detail = error.errors(include_context=False, include_input=False) if isinstance(error, ValidationError) else str(error)
-        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(detail)})
+        detail = error.errors(include_context = False, include_input = False) if isinstance(error, ValidationError) else str(error)
+        return JSONResponse(status_code = 422, content = {"detail": jsonable_encoder(detail)})
 
     @application.get("/")
     async def index():
-        return RedirectResponse(url="/frontend/index.html")
+        return RedirectResponse(url = "/frontend/index.html")
 
     @application.get("/api/health")
     async def health():
@@ -226,19 +228,19 @@ def create_app(service: WorkflowService | None = None, *, shutdown_callback: Cal
         - Ordinary imported/test apps never send process signals by default.
         """
         if body.instance_id != application.state.instance_id:
-            raise HTTPException(status_code=409, detail="This is a different backend instance. Refresh its status before stopping it.")
+            raise HTTPException(status_code = 409, detail = "This is a different backend instance. Refresh its status before stopping it.")
         if not application.state.managed and application.state.shutdown_callback is None:
-            raise HTTPException(status_code=409, detail="This backend was started manually. Stop it from its terminal after work finishes.")
+            raise HTTPException(status_code = 409, detail = "This backend was started manually. Stop it from its terminal after work finishes.")
         manager = application.state.workflow_jobs
         async with manager.submission_lock:
             manager.accepting = False
             try:
                 if application.state.active_workflow_jobs or await asyncio.to_thread(manager.repository.busy):
-                    raise HTTPException(status_code=409, detail="Work is still queued or running. Wait for it to finish before stopping the backend.")
+                    raise HTTPException(status_code = 409, detail = "Work is still queued or running. Wait for it to finish before stopping the backend.")
                 application.state.stopping = True
             except (OSError, sqlite3.Error) as error:
                 log.warning("Could not check saved jobs before shutdown: %s", error)
-                raise HTTPException(status_code=503, detail="Could not verify whether work is still running. The backend has been left running; check the storage location and try stopping it again.") from error
+                raise HTTPException(status_code = 503, detail = "Could not verify whether work is still running. The backend has been left running; check the storage location and try stopping it again.") from error
             finally:
                 # - A cancelled request or a temporary storage error must not
                 #   leave an otherwise healthy server rejecting every new job.
@@ -261,20 +263,20 @@ def create_app(service: WorkflowService | None = None, *, shutdown_callback: Cal
         asyncio.get_running_loop().call_later(0.2, finish_shutdown)
         return {"status": "stopping", "instance_id": application.state.instance_id}
 
-    @application.api_route("/api/run", methods=["POST"])
-    @application.api_route("/api/logs", methods=["GET"])
-    @application.api_route("/api/heartbeat", methods=["POST"])
-    @application.api_route("/api/output-status", methods=["POST"])
-    @application.api_route("/api/output/{file_name:path}", methods=["GET"])
+    @application.api_route("/api/run", methods = ["POST"])
+    @application.api_route("/api/logs", methods = ["GET"])
+    @application.api_route("/api/heartbeat", methods = ["POST"])
+    @application.api_route("/api/output-status", methods = ["POST"])
+    @application.api_route("/api/output/{file_name:path}", methods = ["GET"])
     async def retired_route():
         """
         Explain obsolete links instead of guessing which project they refer to.
         - The old global run/log/output state could disappear or point elsewhere.
         - Existing draft and generation URLs continue to use their saved identity.
         """
-        raise HTTPException(status_code=410, detail="This legacy route has been retired. Reload the app, open a saved draft, and use its job progress or generation-specific download link.")
+        raise HTTPException(status_code = 410, detail = "This legacy route has been retired. Reload the app, open a saved draft, and use its job progress or generation-specific download link.")
 
-    application.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+    application.mount("/frontend", StaticFiles(directory = FRONTEND_DIR), name = "frontend")
     return application
 
 

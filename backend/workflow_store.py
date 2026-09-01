@@ -23,23 +23,38 @@ from .graph_models import GraphDocument, utc_now
 
 
 class RevisionConflict(ValueError):
+    """A stale mutation that must reload before it can replace a newer revision."""
+
     def __init__(self, expected: int, actual: int):
         self.expected, self.actual = expected, actual
         super().__init__(f"Draft changed: expected revision {expected}, current revision is {actual}. Reload or re-export before editing/generating.")
 
 
 class DraftNotFound(FileNotFoundError):
+    """A requested draft, revision, or generation is absent from this store."""
+
     pass
 
 
 def json_text(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False)
+    """Serialize portable, deterministic JSON for hashes and database records."""
+
+    return json.dumps(value, ensure_ascii = False, sort_keys = True, indent = 2, allow_nan = False)
 
 
 class WorkflowStore:
+    """Own all durable graph, snapshot, history, cache, and generation records.
+
+    - Open one short-lived SQLite connection per operation for thread safety.
+    - Use immediate transactions for revision-changing operations.
+    - Commit operation receipts with their result so process recovery can tell a
+      completed mutation from work interrupted before its transaction committed.
+    - Keep source snapshots and generated manifests outside public web directories.
+    """
+
     def __init__(self, directory: str | Path):
         self.directory = Path(directory).expanduser().resolve()
-        self.directory.mkdir(parents=True, exist_ok=True)
+        self.directory.mkdir(parents = True, exist_ok = True)
         self.database = self.directory / "workflows.sqlite3"
         with self.connection() as db:
             db.execute("PRAGMA journal_mode=WAL")
@@ -88,7 +103,9 @@ class WorkflowStore:
 
     @contextmanager
     def connection(self):
-        db = sqlite3.connect(self.database, timeout=30)
+        """Yield a configured connection and always commit, roll back, and close it."""
+
+        db = sqlite3.connect(self.database, timeout = 30)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
         try:
@@ -109,6 +126,13 @@ class WorkflowStore:
 
     def create(self, graph: GraphDocument, snapshots: dict[str, str], output_folder: str | Path,
                settings: dict | None = None, *, operation_id: str | None = None) -> GraphDocument:
+        """Save revision one, its source snapshots, settings, and optional receipt.
+
+        - Validate snapshot ownership and completeness before opening a transaction.
+        - Create the selected output folder explicitly; it is never a public mount.
+        - Commit the current draft and immutable revision-history row together.
+        """
+
         graph = GraphDocument.model_validate(graph.model_dump())
         if graph.revision != 1:
             raise ValueError("New drafts must start at revision 1.")
@@ -119,7 +143,7 @@ class WorkflowStore:
         if missing:
             raise ValueError(f"Missing source snapshots: {', '.join(missing)}")
         output_folder = Path(output_folder).expanduser().resolve()
-        output_folder.mkdir(parents=True, exist_ok=True)
+        output_folder.mkdir(parents = True, exist_ok = True)
         encoded = graph.model_dump_json()
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -195,12 +219,12 @@ class WorkflowStore:
                     (item["id"], item["revision"]),
                 ).fetchone()
                 item.update(
-                    draft_id=item["id"], title=graph["title"], project_root=graph["project_root"],
-                    node_count=len(graph["nodes"]), edge_count=len(graph["edges"]),
-                    source_count=len(graph["sources"]), issue_count=len(graph["issues"]),
-                    status="generated" if generation else "draft",
-                    generation_id=generation["id"] if generation else None,
-                    has_analysis_errors=any(source["status"] == "failed" for source in graph["sources"])
+                    draft_id = item["id"], title = graph["title"], project_root = graph["project_root"],
+                    node_count = len(graph["nodes"]), edge_count = len(graph["edges"]),
+                    source_count = len(graph["sources"]), issue_count = len(graph["issues"]),
+                    status = "generated" if generation else "draft",
+                    generation_id = generation["id"] if generation else None,
+                    has_analysis_errors = any(source["status"] == "failed" for source in graph["sources"])
                     or any(issue["severity"] == "error" for issue in graph["issues"]),
                 )
                 result.append(item)
@@ -219,19 +243,27 @@ class WorkflowStore:
     def update(self, draft_id: str, expected_revision: int,
                transform: Callable[[GraphDocument], GraphDocument], change: dict, *,
                operation_id: str | None = None) -> GraphDocument:
+        """Apply one optimistic, atomic graph revision and retain its audit record.
+
+        - Lock before reading so the revision comparison and write cannot race.
+        - Reject changes to graph identity, source manifest, or analysis baseline.
+        - Remember removed relationships so model suggestions do not restore them.
+        - Save the new revision and operation receipt in the same transaction.
+        """
+
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             row = self._row(db, draft_id)
             if row["revision"] != expected_revision:
                 raise RevisionConflict(expected_revision, row["revision"])
             previous = GraphDocument.model_validate_json(row["graph_json"])
-            updated = transform(previous.model_copy(deep=True))
+            updated = transform(previous.model_copy(deep = True))
             # A diagram import/patch cannot replace source identity or the baseline.
             for field in ("id", "project_root", "source_digest", "sources", "created_at"):
                 if getattr(updated, field) != getattr(previous, field):
                     raise ValueError(f"Editing cannot change protected graph field: {field}")
             payload = updated.model_dump()
-            payload.update(revision=expected_revision + 1, updated_at=utc_now())
+            payload.update(revision = expected_revision + 1, updated_at = utc_now())
             updated = GraphDocument.model_validate(payload)
             remaining = {(edge.source, edge.target, edge.kind) for edge in updated.edges}
             suppressed = {(edge.source, edge.target, edge.kind) for edge in previous.edges} - remaining

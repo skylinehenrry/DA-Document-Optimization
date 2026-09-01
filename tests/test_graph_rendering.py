@@ -1,4 +1,11 @@
-"""Behavioral checks for graph identity, review fidelity and safe projections."""
+"""Check graph identity, review fidelity, layout, and safe report projections.
+
+- Every canonical node and edge remains represented in SVG and interactive HTML.
+- Saved positions remain stable while unsaved nodes receive deterministic layout.
+- Routing avoids cards where possible and reports unavoidable overlap explicitly.
+- Embedded labels, evidence, and graph JSON remain escaped as data, never markup.
+- Compact direct-link presentation does not mutate or hide the canonical graph.
+"""
 
 from __future__ import annotations
 
@@ -25,7 +32,7 @@ from backend.graph_presentation import direct_connections, file_card_label
 
 class ReportParser(HTMLParser):
     def __init__(self, source: str):
-        super().__init__(convert_charrefs=True)
+        super().__init__(convert_charrefs = True)
         self.nodes = {}
         self.edges = {}
         self.paths = {}
@@ -61,14 +68,14 @@ class ReportParser(HTMLParser):
             self.graph_json += data
 
 
-def make_graph(nodes=(), edges=(), **overrides):
+def make_graph(nodes = (), edges = (), **overrides):
     source_paths = sorted({node.source_path for node in nodes if node.source_path})
     source_paths += sorted({evidence.source_path for edge in edges for evidence in edge.evidence} - set(source_paths))
     values = {
         "id": "graph_test",
         "project_root": "/example/project",
         "source_digest": "b" * 64,
-        "sources": [SourceFile(path=path, sha256="a" * 64, script_type="python", size_bytes=10) for path in source_paths],
+        "sources": [SourceFile(path = path, sha256 = "a" * 64, script_type = "python", size_bytes = 10) for path in source_paths],
         "nodes": list(nodes),
         "edges": list(edges),
     }
@@ -77,11 +84,11 @@ def make_graph(nodes=(), edges=(), **overrides):
 
 
 def node(node_id, **kwargs):
-    return GraphNode(id=node_id, label=kwargs.pop("label", node_id), kind=kwargs.pop("kind", "process"), **kwargs)
+    return GraphNode(id = node_id, label = kwargs.pop("label", node_id), kind = kwargs.pop("kind", "process"), **kwargs)
 
 
 def edge(edge_id, source, target, **kwargs):
-    return GraphEdge(id=edge_id, source=source, target=target, kind=kwargs.pop("kind", "calls"), **kwargs)
+    return GraphEdge(id = edge_id, source = source, target = target, kind = kwargs.pop("kind", "calls"), **kwargs)
 
 
 def svg_elements(source, class_name):
@@ -92,19 +99,19 @@ def svg_elements(source, class_name):
 class DirectPresentationTests(unittest.TestCase):
     def test_file_cards_are_short_without_changing_paths_or_process_annotations(self):
         samples = [
-            (node("script", kind="script", label="nested/deeper/job.py", source_path="nested/deeper/job.py"), "job.py"),
-            (node("posix", kind="file", label="/data/archive/report.csv"), "report.csv"),
-            (node("windows", kind="file", label=r"C:\Data exports\Monthly report.xlsx"), "Monthly report.xlsx"),
-            (node("unc", kind="file", label=r"\\server\share\folder\input.sql"), "input.sql"),
-            (node("relative", kind="file", label=r"C:input.json"), "input.json"),
-            (node("url", kind="file", label="s3://bucket/prefix/data.parquet?version=1"), "data.parquet"),
-            (node("tool", kind="process", label="Join sales / customers", source_path="workflow.yxmd"), "Join sales / customers"),
+            (node("script", kind = "script", label = "nested/deeper/job.py", source_path = "nested/deeper/job.py"), "job.py"),
+            (node("posix", kind = "file", label = "/data/archive/report.csv"), "report.csv"),
+            (node("windows", kind = "file", label = r"C:\Data exports\Monthly report.xlsx"), "Monthly report.xlsx"),
+            (node("unc", kind = "file", label = r"\\server\share\folder\input.sql"), "input.sql"),
+            (node("relative", kind = "file", label = r"C:input.json"), "input.json"),
+            (node("url", kind = "file", label = "s3://bucket/prefix/data.parquet?version=1"), "data.parquet"),
+            (node("tool", kind = "process", label = "Join sales / customers", source_path = "workflow.yxmd"), "Join sales / customers"),
         ]
         graph = make_graph([sample for sample, _ in samples])
-        before = graph.model_dump(mode="json")
+        before = graph.model_dump(mode = "json")
         preview = ET.fromstring(render_graph_svg(graph))
         for sample, expected in samples:
-            with self.subTest(sample=sample.id):
+            with self.subTest(sample = sample.id):
                 self.assertEqual(file_card_label(sample), expected)
                 card = next(item for item in preview.iter() if item.attrib.get("data-node-id") == sample.id)
                 label = next(item for item in card if item.attrib.get("class") == "node-label")
@@ -116,14 +123,14 @@ class DirectPresentationTests(unittest.TestCase):
 
     def test_compact_view_groups_references_without_creating_or_deleting_direct_links(self):
         graph = make_graph(
-            [node("A", kind="script"), node("B", kind="script"), node("C", kind="script")],
+            [node("A", kind = "script"), node("B", kind = "script"), node("C", kind = "script")],
             [
-                edge("a_import", "B", "A", kind="imports"),
-                edge("b_call", "B", "A", status="proposed", evidence=[Evidence(source_path="B.py", line_start=7, extractor="python_ast", excerpt="A.run()")]),
-                edge("c_import", "C", "B", kind="imports"),
+                edge("a_import", "B", "A", kind = "imports"),
+                edge("b_call", "B", "A", status = "proposed", evidence = [Evidence(source_path = "B.py", line_start = 7, extractor = "python_ast", excerpt = "A.run()")]),
+                edge("c_import", "C", "B", kind = "imports"),
             ],
         )
-        before = graph.model_dump(mode="json")
+        before = graph.model_dump(mode = "json")
         connections = direct_connections(graph)
         self.assertEqual({(item.source, item.target) for item in connections}, {("B", "A"), ("C", "B")})
         report = ReportParser(render_graph_html(graph))
@@ -135,8 +142,8 @@ class DirectPresentationTests(unittest.TestCase):
         self.assertEqual(set(report.edges), {item.id for item in graph.edges})
         self.assertEqual(json.loads(report.graph_json), before)
         self.assertIn("A.run()", render_graph_html(graph))
-        graph.edges.append(edge("explicit", "C", "A", kind="imports"))
-        graph.edges.append(edge("reverse", "A", "B", kind="imports"))
+        graph.edges.append(edge("explicit", "C", "A", kind = "imports"))
+        graph.edges.append(edge("reverse", "A", "B", kind = "imports"))
         self.assertEqual(
             {(item.source, item.target) for item in direct_connections(graph)},
             {("B", "A"), ("C", "B"), ("C", "A"), ("A", "B")},
@@ -144,8 +151,8 @@ class DirectPresentationTests(unittest.TestCase):
 
     def test_different_data_relationships_do_not_collapse_into_one_arrow(self):
         graph = make_graph(
-            [node("script", kind="script"), node("file", kind="file", label="data.csv")],
-            [edge("read", "file", "script", kind="reads"), edge("write", "file", "script", kind="writes")],
+            [node("script", kind = "script"), node("file", kind = "file", label = "data.csv")],
+            [edge("read", "file", "script", kind = "reads"), edge("write", "file", "script", kind = "writes")],
         )
         self.assertEqual(len(direct_connections(graph)), 2)
         self.assertNotIn("connection-member", ReportParser(render_graph_html(graph)).edges["read"]["class"])
@@ -162,7 +169,7 @@ class GraphRenderingTests(unittest.TestCase):
         self.assertEqual(positions["A"].x, positions["B"].x)
         self.assertGreater(positions["C"].x, positions["B"].x)
         self.assertNotEqual(positions["A"], positions["B"])
-        reversed_graph = graph.model_copy(deep=True)
+        reversed_graph = graph.model_copy(deep = True)
         reversed_graph.nodes.reverse()
         reversed_graph.edges.reverse()
         self.assertEqual(layout_graph(reversed_graph), positions)
@@ -181,12 +188,12 @@ class GraphRenderingTests(unittest.TestCase):
         graph = make_graph(
             [node("first.id"), node("second:id"), node("isolated")],
             [
-                edge("a.edge", "first.id", "second:id", kind="reads"),
-                edge("b.edge", "second:id", "first.id", kind="writes"),
-                edge("c.edge", "first.id", "first.id", kind="control_flow", status="proposed"),
+                edge("a.edge", "first.id", "second:id", kind = "reads"),
+                edge("b.edge", "second:id", "first.id", kind = "writes"),
+                edge("c.edge", "first.id", "first.id", kind = "control_flow", status = "proposed"),
             ],
         )
-        before = graph.model_dump(mode="json")
+        before = graph.model_dump(mode = "json")
         html_report = ReportParser(render_graph_html(graph))
         self.assertEqual(set(html_report.nodes), {node.id for node in graph.nodes})
         self.assertEqual(set(html_report.edges), {edge.id for edge in graph.edges})
@@ -202,12 +209,12 @@ class GraphRenderingTests(unittest.TestCase):
         self.assertEqual({element.attrib["data-edge-id"] for element in svg_elements(preview, "edge")}, set(html_report.edges))
         metadata = ET.fromstring(preview).find("{http://www.w3.org/2000/svg}metadata")
         self.assertEqual(json.loads(metadata.text), before)
-        self.assertEqual(graph.model_dump(mode="json"), before)
+        self.assertEqual(graph.model_dump(mode = "json"), before)
 
     def test_parallel_relationships_and_self_loops_have_distinct_visible_paths(self):
         graph = make_graph(
             [node("A"), node("B")],
-            [edge("read", "A", "B", kind="reads"), edge("call", "A", "B"), edge("loop", "B", "B", kind="control_flow")],
+            [edge("read", "A", "B", kind = "reads"), edge("call", "A", "B"), edge("loop", "B", "B", kind = "control_flow")],
         )
         report = ReportParser(render_graph_html(graph))
         self.assertEqual(len(report.paths), 3)
@@ -220,7 +227,7 @@ class GraphRenderingTests(unittest.TestCase):
 
     def test_long_edge_avoids_an_intervening_card(self):
         graph = make_graph(
-            [node("A", position=Position(x=50, y=80)), node("obstacle", position=Position(x=420, y=80)), node("B", position=Position(x=820, y=80))],
+            [node("A", position = Position(x = 50, y = 80)), node("obstacle", position = Position(x = 420, y = 80)), node("B", position = Position(x = 820, y = 80))],
             [edge("cross", "A", "B")],
         )
         report = ReportParser(render_graph_html(graph))
@@ -238,21 +245,21 @@ class GraphRenderingTests(unittest.TestCase):
     def test_distinct_relationships_do_not_merge_into_shared_line_segments(self):
         scenarios = {
             "fanout beside an independent input": make_graph(
-                [node("input", position=Position(x=64, y=238)), node("runner", position=Position(x=64, y=412)),
-                 node("first", position=Position(x=524, y=64)), node("second", position=Position(x=524, y=238))],
-                [edge("e1", "input", "second", kind="reads"), edge("e2", "runner", "second"), edge("e3", "runner", "first")],
+                [node("input", position = Position(x = 64, y = 238)), node("runner", position = Position(x = 64, y = 412)),
+                 node("first", position = Position(x = 524, y = 64)), node("second", position = Position(x = 524, y = 238))],
+                [edge("e1", "input", "second", kind = "reads"), edge("e2", "runner", "second"), edge("e3", "runner", "first")],
             ),
             "opposite diagonals": make_graph(
-                [node("left_top", position=Position(x=64, y=64)), node("left_bottom", position=Position(x=64, y=238)),
-                 node("right_top", position=Position(x=524, y=64)), node("right_bottom", position=Position(x=524, y=238))],
+                [node("left_top", position = Position(x = 64, y = 64)), node("left_bottom", position = Position(x = 64, y = 238)),
+                 node("right_top", position = Position(x = 524, y = 64)), node("right_bottom", position = Position(x = 524, y = 238))],
                 [edge("e1", "left_top", "right_bottom"), edge("e2", "left_bottom", "right_top")],
             ),
         }
         for name, graph in scenarios.items():
-            with self.subTest(name=name):
+            with self.subTest(name = name):
                 report = ReportParser(render_graph_html(graph))
                 self.assertEqual(set(report.paths), {relationship.id for relationship in graph.edges})
-                self.assertEqual(json.loads(report.graph_json), graph.model_dump(mode="json"))
+                self.assertEqual(json.loads(report.graph_json), graph.model_dump(mode = "json"))
                 segments = {}
                 for edge_id, path in report.paths.items():
                     points = [tuple(map(float, pair)) for pair in re.findall(r"[ML](-?[\d.]+) (-?[\d.]+)", path)]
@@ -270,7 +277,7 @@ class GraphRenderingTests(unittest.TestCase):
 
     def test_unavoidable_shared_connectors_have_a_notice_and_keep_every_edge(self):
         graph = make_graph(
-            [node("A", position=Position(x=100, y=100)), node("B", position=Position(x=100, y=100)), node("C", position=Position(x=600, y=100))],
+            [node("A", position = Position(x = 100, y = 100)), node("B", position = Position(x = 100, y = 100)), node("C", position = Position(x = 600, y = 100))],
             [edge("a", "A", "C"), edge("b", "B", "C")],
         )
         for rendered in (render_graph_html(graph), render_graph_svg(graph)):
@@ -278,17 +285,17 @@ class GraphRenderingTests(unittest.TestCase):
             self.assertEqual(set(ReportParser(rendered).edges), {"a", "b"})
 
     def test_saved_positions_are_exact_and_missing_positions_do_not_overlap_them(self):
-        graph = make_graph([node("manual", position=Position(x=64, y=64)), node("automatic")])
-        before = graph.model_dump(mode="json")
+        graph = make_graph([node("manual", position = Position(x = 64, y = 64)), node("automatic")])
+        before = graph.model_dump(mode = "json")
         positions = layout_graph(graph)
-        self.assertEqual(positions["manual"], Position(x=64, y=64))
+        self.assertEqual(positions["manual"], Position(x = 64, y = 64))
         self.assertGreaterEqual(positions["automatic"].y, positions["manual"].y + NODE_HEIGHT)
         positions["manual"].x += 1
-        self.assertEqual(graph.model_dump(mode="json"), before)
+        self.assertEqual(graph.model_dump(mode = "json"), before)
 
     def test_negative_saved_positions_get_only_a_uniform_viewport_translation(self):
         graph = make_graph(
-            [node("A", position=Position(x=-320, y=-180)), node("B", position=Position(x=180, y=40))],
+            [node("A", position = Position(x = -320, y = -180)), node("B", position = Position(x = 180, y = 40))],
             [edge("ab", "A", "B")],
         )
         positions = layout_graph(graph)
@@ -301,14 +308,14 @@ class GraphRenderingTests(unittest.TestCase):
 
     def test_summaries_attach_only_by_id_with_duplicate_basenames(self):
         graph = make_graph([
-            node("alpha_main", label="main.py", kind="script", source_path="alpha/main.py", script_type="python"),
-            node("beta_main", label="main.py", kind="script", source_path="beta/main.py", script_type="python"),
+            node("alpha_main", label = "main.py", kind = "script", source_path = "alpha/main.py", script_type = "python"),
+            node("beta_main", label = "main.py", kind = "script", source_path = "beta/main.py", script_type = "python"),
         ])
         signature = topology_signature(graph)
         summaries = {
-            "alpha_main": NarrativeSummary(high_level="Alpha purpose", detailed="Alpha detailed processing"),
-            "beta_main": NarrativeSummary(high_level="Beta purpose", detailed="Beta detailed processing"),
-            "main.py": NarrativeSummary(high_level="Must never attach", detailed="Wrong basename summary"),
+            "alpha_main": NarrativeSummary(high_level = "Alpha purpose", detailed = "Alpha detailed processing"),
+            "beta_main": NarrativeSummary(high_level = "Beta purpose", detailed = "Beta detailed processing"),
+            "main.py": NarrativeSummary(high_level = "Must never attach", detailed = "Wrong basename summary"),
         }
         report = ReportParser(render_graph_html(graph, summaries))
         self.assertEqual(report.nodes["alpha_main"]["data-high-level-summary"], "Alpha purpose")
@@ -321,13 +328,13 @@ class GraphRenderingTests(unittest.TestCase):
     def test_untrusted_text_cannot_escape_html_svg_or_json(self):
         hostile = '</script><script>alert("x")</script><img src=x onerror="bad()"> & {{ title }}'
         graph = make_graph(
-            [node("source", kind="script", script_type="python", source_path="main.py", label=hostile, details={"description": hostile}), node("target")],
-            [edge("danger", "source", "target", label=hostile, condition=hostile, evidence=[Evidence(source_path="main.py", line_start=2, excerpt=hostile, extractor="static")])],
-            title=hostile,
+            [node("source", kind = "script", script_type = "python", source_path = "main.py", label = hostile, details = {"description": hostile}), node("target")],
+            [edge("danger", "source", "target", label = hostile, condition = hostile, evidence = [Evidence(source_path = "main.py", line_start = 2, excerpt = hostile, extractor = "static")])],
+            title = hostile,
         )
-        rendered = render_graph_html(graph, {"source": NarrativeSummary(high_level=hostile, detailed=hostile)})
+        rendered = render_graph_html(graph, {"source": NarrativeSummary(high_level = hostile, detailed = hostile)})
         report = ReportParser(rendered)
-        self.assertEqual(json.loads(report.graph_json), graph.model_dump(mode="json"))
+        self.assertEqual(json.loads(report.graph_json), graph.model_dump(mode = "json"))
         self.assertEqual(report.nodes["source"]["data-high-level-summary"], hostile)
         self.assertFalse(any(key.startswith("on") for attrs in report.all_attributes for key in attrs))
         self.assertEqual(len(report.script_tags), 3)
@@ -337,48 +344,48 @@ class GraphRenderingTests(unittest.TestCase):
         root = ET.fromstring(preview)
         self.assertEqual(len(list(root.iter("{http://www.w3.org/2000/svg}script"))), 0)
         metadata = root.find("{http://www.w3.org/2000/svg}metadata")
-        self.assertEqual(json.loads(metadata.text), graph.model_dump(mode="json"))
+        self.assertEqual(json.loads(metadata.text), graph.model_dump(mode = "json"))
 
     def test_partial_analysis_proposals_and_source_evidence_are_visible(self):
         graph = make_graph(
-            [node("A", kind="script", source_path="main.py", script_type="python"), node("B")],
-            [edge("uncertain", "A", "B", status="proposed", evidence=[Evidence(source_path="main.py", line_start=12, line_end=14, excerpt="run(next_step)", extractor="python_ast")])],
-            sources=[SourceFile(path="main.py", sha256="a" * 64, script_type="python", size_bytes=10, status="partial")],
-            issues=[GraphIssue(id="issue1", severity="warning", code="dynamic_call", message="Invocation cannot be resolved.")],
+            [node("A", kind = "script", source_path = "main.py", script_type = "python"), node("B")],
+            [edge("uncertain", "A", "B", status = "proposed", evidence = [Evidence(source_path = "main.py", line_start = 12, line_end = 14, excerpt = "run(next_step)", extractor = "python_ast")])],
+            sources = [SourceFile(path = "main.py", sha256 = "a" * 64, script_type = "python", size_bytes = 10, status = "partial")],
+            issues = [GraphIssue(id = "issue1", severity = "warning", code = "dynamic_call", message = "Invocation cannot be resolved.")],
         )
-        for rendered in (render_graph_html(graph, summary_statuses={"A": "failed"}), render_graph_svg(graph)):
+        for rendered in (render_graph_html(graph, summary_statuses = {"A": "failed"}), render_graph_svg(graph)):
             self.assertIn("1 of 1 source files analyzed", rendered)
             self.assertIn("Dependency review:", rendered)
             self.assertNotIn("not fully parsed", rendered)
             self.assertIn("proposed relationship", rendered)
             self.assertIn("main.py:12–14", rendered)
             self.assertIn("run(next_step)", rendered)
-        html_report = render_graph_html(graph, summary_statuses={"A": "failed"})
+        html_report = render_graph_html(graph, summary_statuses = {"A": "failed"})
         self.assertIn("Invocation cannot be resolved.", html_report)
         self.assertIn("requested model summaries were unavailable for 1 file", html_report)
 
     def test_grouped_diagnostics_show_locations_and_safe_model_failure_reasons(self):
         graph = make_graph(
-            [node("source", kind="script", source_path="main.py", script_type="python")],
-            issues=[GraphIssue(
-                id=f"issue{line}", severity="warning", code="dynamic_path_receiver", message="Path is dynamic.",
-                evidence=[Evidence(source_path="main.py", line_start=line, line_end=line,
-                                   excerpt="target.read_text()", extractor="python_ast")],
+            [node("source", kind = "script", source_path = "main.py", script_type = "python")],
+            issues = [GraphIssue(
+                id = f"issue{line}", severity = "warning", code = "dynamic_path_receiver", message = "Path is dynamic.",
+                evidence = [Evidence(source_path = "main.py", line_start = line, line_end = line,
+                                   excerpt = "target.read_text()", extractor = "python_ast")],
             ) for line in (4, 8, 12)],
         )
-        rendered = render_graph_html(graph, summary_statuses={"source": "fallback"},
-                                     summary_errors={"source": 'Missing package <script>alert("x")</script>'})
+        rendered = render_graph_html(graph, summary_statuses = {"source": "fallback"},
+                                     summary_errors = {"source": 'Missing package <script>alert("x")</script>'})
         self.assertEqual(rendered.count('data-issue-code="dynamic_path_receiver"'), 1)
         self.assertIn("3 occurrence(s)", rendered)
         self.assertIn("<code>main.py:8</code>", rendered)
         self.assertIn("Why local descriptions were used", rendered)
         self.assertNotIn('<script>alert("x")</script>', rendered)
         self.assertIn("Missing package &lt;script&gt;", rendered)
-        self.assertEqual(json.loads(ReportParser(rendered).graph_json), graph.model_dump(mode="json"))
+        self.assertEqual(json.loads(ReportParser(rendered).graph_json), graph.model_dump(mode = "json"))
 
     def test_overlapping_manual_cards_are_retained_with_an_explicit_notice(self):
         graph = make_graph(
-            [node("A", position=Position(x=100, y=100)), node("B", position=Position(x=120, y=100))],
+            [node("A", position = Position(x = 100, y = 100)), node("B", position = Position(x = 120, y = 100))],
             [edge("ab", "A", "B")],
         )
         rendered = render_graph_html(graph)
@@ -393,7 +400,7 @@ class GraphRenderingTests(unittest.TestCase):
         report = ReportParser(render_graph_html(graph))
         self.assertEqual(report.nodes, {})
         self.assertEqual(report.edges, {})
-        self.assertEqual(json.loads(report.graph_json), graph.model_dump(mode="json"))
+        self.assertEqual(json.loads(report.graph_json), graph.model_dump(mode = "json"))
         preview = render_graph_svg(graph)
         root = ET.fromstring(preview)
         self.assertGreater(int(root.attrib["width"]), 0)

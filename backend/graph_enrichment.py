@@ -1,8 +1,15 @@
-"""Optional LLM assistance, isolated from the authoritative graph.
+"""Add optional model-written descriptions and review-only edge suggestions.
 
-Summary output has no graph fields. Dependency suggestions can reference only
-existing nodes, must quote real source lines, and always require human review.
-Source text and comments are treated as data, never as model instructions.
+- Static analysis and the reviewed graph remain authoritative for topology.
+- Summary output contains prose only and cannot add, remove, or reconnect edges.
+- Suggestions may reference existing node IDs only, must quote exact source lines,
+  and stay visibly proposed until the user reviews them.
+- Source code, comments, filenames, and graph labels are untrusted input data and
+  are never treated as instructions to the model or executed by this application.
+- Provider initialization is deferred until the user explicitly requests model
+  work; a failed provider falls back to local summaries without repeated sign-in.
+- Cache keys include source, context, prompt version, language, and provider so a
+  response is never reused for a materially different request.
 """
 
 from __future__ import annotations
@@ -44,9 +51,15 @@ def create_chain(model: ModelProvider, schema: type[StrictModel], authentication
 
 
 def local_context(graph: GraphDocument, node: GraphNode) -> dict:
+    """Build the bounded, evidence-preserving graph context for one source node.
+
+    - Include only relationships directly touching the selected node.
+    - Preserve direction, status, conditions, evidence, and review notes.
+    - Include relevant analysis limitations without presenting them as topology.
+    """
     neighbors = {other.id: other for other in graph.nodes}
     relationships = []
-    for edge in sorted(graph.edges, key=lambda item: item.id):
+    for edge in sorted(graph.edges, key = lambda item: item.id):
         if node.id not in (edge.source, edge.target):
             continue
         relationships.append({
@@ -62,6 +75,12 @@ def local_context(graph: GraphDocument, node: GraphNode) -> dict:
 
 
 def deterministic_summary(graph: GraphDocument, node: GraphNode) -> NarrativeSummary:
+    """Create a truthful local description when model prose is disabled or fails.
+
+    - Describe only relationships already present in the reviewed graph.
+    - Identify proposed links and cite recorded evidence locations when available.
+    - State that an empty neighborhood does not prove that a source is independent.
+    """
     context = local_context(graph, node)
     name = node.source_path or node.label
     connections = context["relationships"]
@@ -81,11 +100,11 @@ def deterministic_summary(graph: GraphDocument, node: GraphNode) -> NarrativeSum
         lines.append("No supported relationships were established. This does not prove the script is independent.")
     if context["limitations"]:
         lines.append("Analysis limitations:\n" + "\n".join(context["limitations"]))
-    return NarrativeSummary(high_level=high[:8000], detailed="\n\n".join(lines)[:40000])
+    return NarrativeSummary(high_level = high[:8000], detailed = "\n\n".join(lines)[:40000])
 
 
 async def _invoke(chain, messages: list[tuple[str, str]], timeout_seconds: float):
-    result = await asyncio.wait_for(chain.ainvoke(messages), timeout=timeout_seconds)
+    result = await asyncio.wait_for(chain.ainvoke(messages), timeout = timeout_seconds)
     if result is None:
         raise ValueError("The model returned no structured result (possibly a refusal).")
     return result
@@ -94,8 +113,15 @@ async def _invoke(chain, messages: list[tuple[str, str]], timeout_seconds: float
 async def enrich_summaries(graph: GraphDocument, snapshots: dict[str, str], store: WorkflowStore, *,
                            use_llm: bool = False, model: ModelProvider = "OpenAI", language: str = "English",
                            max_concurrency: int = 3, timeout_seconds: float = 90,
-                           logger: Callable[[str], None] | None = None, chain=None,
+                           logger: Callable[[str], None] | None = None, chain = None,
                            provider_identity: dict | None = None) -> dict[str, dict]:
+    """Return one cached, model-written, or deterministic summary per script.
+
+    - Initialize the selected provider once before concurrent requests begin.
+    - Bound concurrency, request duration, source size, and retry count.
+    - Never silently truncate source text or discard the deterministic fallback.
+    - Store successful structured results under an input-specific cache key.
+    """
     if not 1 <= max_concurrency <= 16:
         raise ValueError("max_concurrency must be between 1 and 16.")
     if timeout_seconds <= 0:
@@ -175,25 +201,35 @@ async def enrich_summaries(graph: GraphDocument, snapshots: dict[str, str], stor
     return dict(await asyncio.gather(*(one(node) for node in script_nodes)))
 
 
+# Structured suggestion output accepted from a model.
+# - Exact line ranges and excerpts let the backend verify every proposed edge.
+# - The outer response also carries unresolved items so uncertainty remains visible
+#   instead of being converted into a guessed connection.
 class EdgeSuggestion(StrictModel):
     source: str
     target: str
     kind: EdgeKind
     explanation: str
-    line_start: int = Field(ge=1)
-    line_end: int = Field(ge=1)
-    excerpt: str = Field(min_length=1)
+    line_start: int = Field(ge = 1)
+    line_end: int = Field(ge = 1)
+    excerpt: str = Field(min_length = 1)
 
 
 class Suggestions(StrictModel):
-    edges: list[EdgeSuggestion] = Field(default_factory=list, max_length=50)
-    unclear_items: list[str] = Field(default_factory=list, max_length=50)
+    edges: list[EdgeSuggestion] = Field(default_factory = list, max_length = 50)
+    unclear_items: list[str] = Field(default_factory = list, max_length = 50)
 
 
 async def suggest_relationships(graph: GraphDocument, snapshots: dict[str, str], *, model: ModelProvider,
                                 suppressed: set[tuple[str, str, str]] | None = None, max_concurrency: int = 3,
-                                timeout_seconds: float = 90, logger=None, chain=None) -> GraphDocument:
-    """Explicitly requested assistance; never changes confirmed/user-edited edges."""
+                                timeout_seconds: float = 90, logger = None, chain = None) -> GraphDocument:
+    """Append verified, review-only proposals without changing existing edges.
+
+    - Ask about one source at a time and supply a bounded registry of valid nodes.
+    - Verify endpoints, directions, exact excerpts, and line numbers locally.
+    - Ignore duplicates and relationships the user previously removed.
+    - Record provider failures and unclear items as diagnostics, not connections.
+    """
     if not 1 <= max_concurrency <= 16:
         raise ValueError("max_concurrency must be between 1 and 16.")
     log = logger or (lambda message: None)
@@ -231,13 +267,13 @@ async def suggest_relationships(graph: GraphDocument, snapshots: dict[str, str],
             return node, None, f"LLM suggestions failed ({type(error).__name__}); static graph retained."
 
     nodes = {node.id: node for node in graph.nodes}
-    result = graph.model_copy(deep=True)
+    result = graph.model_copy(deep = True)
     known = {(edge.source, edge.target, edge.kind) for edge in result.edges}
     known.update(suppressed or set())
 
-    def issue(node, message, code="llm_suggestion_unresolved"):
-        item = GraphIssue(id=stable_id("issue", code, node.id, message), severity="warning", code=code,
-                          message=message, node_ids=[node.id])
+    def issue(node, message, code = "llm_suggestion_unresolved"):
+        item = GraphIssue(id = stable_id("issue", code, node.id, message), severity = "warning", code = code,
+                          message = message, node_ids = [node.id])
         if item.id not in {existing.id for existing in result.issues}:
             result.issues.append(item)
 
@@ -262,9 +298,9 @@ async def suggest_relationships(graph: GraphDocument, snapshots: dict[str, str],
                 continue
             known.add(key)
             result.edges.append(GraphEdge(
-                id=stable_id("edge", *key), source=edge.source, target=edge.target, kind=edge.kind,
-                origin="llm", status="proposed", label=edge.kind, review_note=edge.explanation,
-                evidence=[Evidence(source_path=node.source_path, line_start=edge.line_start, line_end=edge.line_end,
-                                   excerpt=edge.excerpt, extractor="llm", note="Quoted source is real; the inferred relationship still needs human review.")],
+                id = stable_id("edge", *key), source = edge.source, target = edge.target, kind = edge.kind,
+                origin = "llm", status = "proposed", label = edge.kind, review_note = edge.explanation,
+                evidence = [Evidence(source_path = node.source_path, line_start = edge.line_start, line_end = edge.line_end,
+                                   excerpt = edge.excerpt, extractor = "llm", note = "Quoted source is real; the inferred relationship still needs human review.")],
             ))
     return GraphDocument.model_validate(result.model_dump())

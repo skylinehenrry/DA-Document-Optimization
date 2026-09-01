@@ -79,7 +79,7 @@ class ProcessRecoveryTests(unittest.TestCase):
         self.sentinel = self.root / "source-was-executed.txt"
         (source / "worker.py").write_text(
             f"from pathlib import Path\nPath({str(self.sentinel)!r}).write_text('must never run')\n",
-            encoding="utf-8",
+            encoding = "utf-8",
         )
 
     def force_close(self, scenario):
@@ -92,9 +92,9 @@ class ProcessRecoveryTests(unittest.TestCase):
         with (self.root / "child.log").open("w") as output:
             child = subprocess.Popen(
                 [sys.executable, "-B", "-c", CHILD, str(self.root), scenario],
-                cwd=Path(__file__).resolve().parents[1],
-                env={**os.environ, "DA_WORKFLOW_STORE": str(self.root / "store")},
-                stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
+                cwd = Path(__file__).resolve().parents[1],
+                env = {**os.environ, "DA_WORKFLOW_STORE": str(self.root / "store")},
+                stdin = subprocess.DEVNULL, stdout = output, stderr = subprocess.STDOUT,
             )
             try:
                 checkpoint = self.root / "checkpoint.json"
@@ -115,7 +115,7 @@ class ProcessRecoveryTests(unittest.TestCase):
             finally:
                 if child.poll() is None:
                     child.kill()
-                child.wait(timeout=5)
+                child.wait(timeout = 5)
         self.assertFalse(self.sentinel.exists())
         return state
 

@@ -59,42 +59,42 @@ process.stdout.write(JSON.stringify({
 class FrontendGraphContractTests(unittest.TestCase):
     def setUp(self):
         self.graph = GraphDocument(
-            id="draft_editor_contract", revision=7, title="Reviewed workflow", project_root="/fixture/project",
-            source_digest="1" * 64,
-            sources=[SourceFile(path="main.py", sha256="2" * 64, script_type="python", size_bytes=32)],
-            nodes=[
-                GraphNode(id="script_a", label="main.py", kind="script", source_path="main.py", script_type="python",
-                          position=Position(x=10, y=30), resource_key="script:main.py",
-                          details={"definitions": ["run"], "source_sha256": "2" * 64}),
-                GraphNode(id="process_b", label="Original destination", kind="process", position=Position(x=280, y=30)),
-                GraphNode(id="process_other", label="Another retained step", kind="process", position=Position(x=540, y=30)),
+            id = "draft_editor_contract", revision = 7, title = "Reviewed workflow", project_root = "/fixture/project",
+            source_digest = "1" * 64,
+            sources = [SourceFile(path = "main.py", sha256 = "2" * 64, script_type = "python", size_bytes = 32)],
+            nodes = [
+                GraphNode(id = "script_a", label = "main.py", kind = "script", source_path = "main.py", script_type = "python",
+                          position = Position(x = 10, y = 30), resource_key = "script:main.py",
+                          details = {"definitions": ["run"], "source_sha256": "2" * 64}),
+                GraphNode(id = "process_b", label = "Original destination", kind = "process", position = Position(x = 280, y = 30)),
+                GraphNode(id = "process_other", label = "Another retained step", kind = "process", position = Position(x = 540, y = 30)),
             ],
-            edges=[GraphEdge(id="edge_retained", source="script_a", target="process_b", kind="calls",
-                             label="Suggested relationship", origin="llm", status="proposed", condition="ready",
-                             review_note="Original proposal explanation",
-                             evidence=[Evidence(source_path="main.py", line_start=1, line_end=1,
-                                                excerpt="if ready: next_step()", extractor="llm")])],
+            edges = [GraphEdge(id = "edge_retained", source = "script_a", target = "process_b", kind = "calls",
+                             label = "Suggested relationship", origin = "llm", status = "proposed", condition = "ready",
+                             review_note = "Original proposal explanation",
+                             evidence = [Evidence(source_path = "main.py", line_start = 1, line_end = 1,
+                                                excerpt = "if ready: next_step()", extractor = "llm")])],
         )
-        self.base = self.graph.model_dump(mode="json")
+        self.base = self.graph.model_dump(mode = "json")
 
-    def frontend_changes(self, working=None, *, add_manual_kinds=False):
+    def frontend_changes(self, working = None, *, add_manual_kinds = False):
         payload = {"base": self.base, "addManualKinds": add_manual_kinds}
         if working is not None:
             payload["working"] = working
         result = subprocess.run(
-            [NODE, "--input-type=module", "-e", DIFF_SCRIPT], cwd=ROOT,
-            input=json.dumps(payload, ensure_ascii=False), text=True,
-            capture_output=True, timeout=15,
+            [NODE, "--input-type=module", "-e", DIFF_SCRIPT], cwd = ROOT,
+            input = json.dumps(payload, ensure_ascii = False), text = True,
+            capture_output = True, timeout = 15,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
-    def apply_frontend_changes(self, working=None, *, add_manual_kinds=False):
-        output = self.frontend_changes(working, add_manual_kinds=add_manual_kinds)
+    def apply_frontend_changes(self, working = None, *, add_manual_kinds = False):
+        output = self.frontend_changes(working, add_manual_kinds = add_manual_kinds)
         request = EditRequest.model_validate({"expected_revision": self.graph.revision, "operations": output["operations"]})
-        before = self.graph.model_dump(mode="json")
+        before = self.graph.model_dump(mode = "json")
         updated = apply_edits(self.graph, request.operations)
-        self.assertEqual(self.graph.model_dump(mode="json"), before, "Applying the batch must not mutate the saved baseline")
+        self.assertEqual(self.graph.model_dump(mode = "json"), before, "Applying the batch must not mutate the saved baseline")
         return updated, output
 
     def test_reconnecting_retained_edge_to_new_node_before_removing_previous_destination(self):
@@ -115,12 +115,12 @@ class FrontendGraphContractTests(unittest.TestCase):
     def test_source_node_label_and_position_changes_keep_server_owned_identity_and_metadata(self):
         working = copy.deepcopy(self.base)
         source = working["nodes"][0]
-        source.update(label="Prepare the monthly data", position={"x": -125.5, "y": 600},
-                      source_path="different.py", script_type="sql", resource_key="different-resource", details={"replaced": True})
+        source.update(label = "Prepare the monthly data", position = {"x": -125.5, "y": 600},
+                      source_path = "different.py", script_type = "sql", resource_key = "different-resource", details = {"replaced": True})
         updated, output = self.apply_frontend_changes(working)
         result = updated.nodes[0]
         self.assertEqual(result.label, "Prepare the monthly data")
-        self.assertEqual(result.position, Position(x=-125.5, y=600))
+        self.assertEqual(result.position, Position(x = -125.5, y = 600))
         for name in ("id", "kind", "source_path", "script_type", "resource_key", "details"):
             self.assertEqual(getattr(result, name), getattr(self.graph.nodes[0], name))
         self.assertEqual(updated.sources, self.graph.sources)
@@ -141,7 +141,7 @@ class FrontendGraphContractTests(unittest.TestCase):
 
     def test_changing_an_endpoint_or_relation_type_confirms_user_edit_and_clears_old_evidence(self):
         for field, value in (("source", "process_other"), ("target", "process_other"), ("kind", "depends_on")):
-            with self.subTest(changed_field=field):
+            with self.subTest(changed_field = field):
                 working = copy.deepcopy(self.base)
                 working["edges"][0][field] = value
                 updated, output = self.apply_frontend_changes(working)
@@ -166,7 +166,7 @@ class FrontendGraphContractTests(unittest.TestCase):
         self.assertEqual(updated.edges[0].target, self.graph.edges[0].target)
 
     def test_manual_node_types_identifiers_and_payload_fields_match_the_backend_contract(self):
-        updated, output = self.apply_frontend_changes(add_manual_kinds=True)
+        updated, output = self.apply_frontend_changes(add_manual_kinds = True)
         new_nodes = {node.id: node for node in updated.nodes if node.id not in {item.id for item in self.graph.nodes}}
         new_edges = {edge.id: edge for edge in updated.edges if edge.id != "edge_retained"}
         all_ids = {node.id for node in updated.nodes} | {edge.id for edge in updated.edges}

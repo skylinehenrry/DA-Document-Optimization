@@ -1,4 +1,14 @@
-"""Atomic graph edit operations suitable for any future visual editor."""
+"""Validate and apply the user's visual graph corrections as one atomic batch.
+
+- The operation models form the shared contract used by the browser and API.
+- A batch may add, update, reconnect, or remove nodes and edges in dependency order.
+- Manually added nodes cannot impersonate analyzed source files or inherit their
+  summaries, evidence, or source identity.
+- Reconnecting an edge clears evidence for its former endpoints; revision history
+  retains that earlier evidence without presenting it as proof of the new link.
+- The complete graph is validated after every batch, so one invalid operation
+  cannot leave a partly edited workflow in storage.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +20,12 @@ from pydantic import Field
 from .graph_models import EdgeKind, GraphDocument, GraphEdge, GraphNode, IDENTIFIER, Position, StrictModel
 
 
+# Graph edit request models.
+# - ``op`` is the discriminator used by Pydantic and by the frontend serializer.
+# - Fields omitted from an update remain unchanged; fields sent as ``None`` follow
+#   the explicit nullability rules enforced below.
+# - Keep these models limited to user-editable fields. Source manifests, analysis
+#   evidence, graph identity, and revision metadata remain backend-owned.
 class AddNode(StrictModel):
     op: Literal["add_node"]
     node: GraphNode
@@ -18,7 +34,7 @@ class AddNode(StrictModel):
 class UpdateNode(StrictModel):
     op: Literal["update_node"]
     id: str
-    label: str | None = Field(default=None, min_length=1, max_length=1000)
+    label: str | None = Field(default = None, min_length = 1, max_length = 1000)
     position: Position | None = None
 
 
@@ -28,11 +44,11 @@ class RemoveNode(StrictModel):
 
 
 class NewEdge(StrictModel):
-    id: str = Field(default_factory=lambda: "edge_" + uuid.uuid4().hex, pattern=IDENTIFIER)
-    source: str = Field(pattern=IDENTIFIER)
-    target: str = Field(pattern=IDENTIFIER)
+    id: str = Field(default_factory = lambda: "edge_" + uuid.uuid4().hex, pattern = IDENTIFIER)
+    source: str = Field(pattern = IDENTIFIER)
+    target: str = Field(pattern = IDENTIFIER)
     kind: EdgeKind = "unknown"
-    label: str | None = Field(default=None, max_length=2000)
+    label: str | None = Field(default = None, max_length = 2000)
     review_note: str | None = None
 
 
@@ -44,10 +60,10 @@ class AddEdge(StrictModel):
 class UpdateEdge(StrictModel):
     op: Literal["update_edge"]
     id: str
-    source: str | None = Field(default=None, pattern=IDENTIFIER)
-    target: str | None = Field(default=None, pattern=IDENTIFIER)
+    source: str | None = Field(default = None, pattern = IDENTIFIER)
+    target: str | None = Field(default = None, pattern = IDENTIFIER)
     kind: EdgeKind | None = None
-    label: str | None = Field(default=None, max_length=2000)
+    label: str | None = Field(default = None, max_length = 2000)
     status: Literal["confirmed", "proposed"] | None = None
     review_note: str | None = None
 
@@ -57,17 +73,24 @@ class RemoveEdge(StrictModel):
     id: str
 
 
-EditOperation = Annotated[AddNode | UpdateNode | RemoveNode | AddEdge | UpdateEdge | RemoveEdge, Field(discriminator="op")]
+EditOperation = Annotated[AddNode | UpdateNode | RemoveNode | AddEdge | UpdateEdge | RemoveEdge, Field(discriminator = "op")]
 
 
 class EditRequest(StrictModel):
-    expected_revision: int = Field(ge=1)
-    operations: list[EditOperation] = Field(min_length=1, max_length=1000)
+    expected_revision: int = Field(ge = 1)
+    operations: list[EditOperation] = Field(min_length = 1, max_length = 1000)
 
 
 def apply_edits(graph: GraphDocument, operations: list[EditOperation]) -> GraphDocument:
-    nodes = {node.id: node.model_copy(deep=True) for node in graph.nodes}
-    edges = {edge.id: edge.model_copy(deep=True) for edge in graph.edges}
+    """Return a validated copy of ``graph`` after applying every requested edit.
+
+    - Work on deep copies so an exception never mutates the caller's saved graph.
+    - Remove incident edges when a node is deleted, matching the visual editor.
+    - Mark added or changed relationships as user-owned and confirmed.
+    - Reject duplicate or missing identifiers before the final graph validation.
+    """
+    nodes = {node.id: node.model_copy(deep = True) for node in graph.nodes}
+    edges = {edge.id: edge.model_copy(deep = True) for edge in graph.edges}
     for operation in operations:
         if isinstance(operation, AddNode):
             node = operation.node
@@ -79,7 +102,7 @@ def apply_edits(graph: GraphDocument, operations: list[EditOperation]) -> GraphD
         elif isinstance(operation, UpdateNode):
             if operation.id not in nodes:
                 raise ValueError(f"Node not found: {operation.id}")
-            changes = operation.model_dump(exclude_unset=True, exclude={"op", "id"})
+            changes = operation.model_dump(exclude_unset = True, exclude = {"op", "id"})
             nodes[operation.id] = GraphNode.model_validate({**nodes[operation.id].model_dump(), **changes})
         elif isinstance(operation, RemoveNode):
             if operation.id not in nodes:
@@ -90,12 +113,12 @@ def apply_edits(graph: GraphDocument, operations: list[EditOperation]) -> GraphD
             edge = operation.edge
             if edge.id in edges or edge.id in nodes:
                 raise ValueError(f"ID already exists: {edge.id}")
-            edges[edge.id] = GraphEdge(**edge.model_dump(), origin="user", status="confirmed")
+            edges[edge.id] = GraphEdge(**edge.model_dump(), origin = "user", status = "confirmed")
         elif isinstance(operation, UpdateEdge):
             if operation.id not in edges:
                 raise ValueError(f"Edge not found: {operation.id}")
             original = edges[operation.id]
-            changes = operation.model_dump(exclude_unset=True, exclude={"op", "id"})
+            changes = operation.model_dump(exclude_unset = True, exclude = {"op", "id"})
             if any(name in changes and changes[name] is None for name in ("source", "target", "kind", "status")):
                 raise ValueError("Edge source, target, kind and status cannot be null.")
             rewired = any(name in changes and changes[name] != getattr(original, name) for name in ("source", "target", "kind"))
@@ -103,7 +126,7 @@ def apply_edits(graph: GraphDocument, operations: list[EditOperation]) -> GraphD
             changes.setdefault("status", "confirmed" if rewired else original.status)
             if rewired:
                 # Citations supporting an old edge are not evidence for new endpoints.
-                changes.update(evidence=[], condition=None)
+                changes.update(evidence = [], condition = None)
                 changes.setdefault("review_note", f"User changed {original.source} → {original.target} ({original.kind}); original evidence is retained in revision history.")
             edges[operation.id] = GraphEdge.model_validate({**original.model_dump(), **changes})
         elif isinstance(operation, RemoveEdge):
@@ -111,6 +134,6 @@ def apply_edits(graph: GraphDocument, operations: list[EditOperation]) -> GraphD
                 raise ValueError(f"Edge not found: {operation.id}")
             del edges[operation.id]
     payload = graph.model_dump()
-    payload.update(nodes=[node.model_dump() for node in nodes.values()], edges=[edge.model_dump() for edge in edges.values()])
+    payload.update(nodes = [node.model_dump() for node in nodes.values()], edges = [edge.model_dump() for edge in edges.values()])
     # Validate the entire batch, so failed reconnects cannot leave partial edits.
     return GraphDocument.model_validate(payload)

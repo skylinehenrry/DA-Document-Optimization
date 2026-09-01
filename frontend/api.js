@@ -25,6 +25,14 @@ function errorMessage(value) {
   return value?.message ?? "The server could not complete this request.";
 }
 
+/*
+Send one bounded same-origin request and classify its outcome for safe recovery.
+
+- A clear 4xx response is a definite rejection that the user can correct.
+- A timeout, network failure, malformed response, or server error is uncertain;
+  the caller must check the durable job record before attempting new work.
+- Raw mode supports verified artifact downloads without changing transport rules.
+*/
 export async function request(path, {method = "GET", body, timeout = 15000, raw = false, fetcher = fetch} = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -47,6 +55,14 @@ export async function request(path, {method = "GET", body, timeout = 15000, raw 
   }
 }
 
+/*
+Wrap browser storage so recovery behavior remains explicit and testable.
+
+- Prefix every key to avoid colliding with unrelated data on the same origin.
+- Treat unreadable or malformed entries as absent without deleting other records.
+- Fail writes visibly because submitting a mutation without a saved request ID
+  would make reconnect recovery unsafe.
+*/
 export class RecoveryStorage {
   constructor(storage, prefix = "da-workflow.v2.") {
     // - Some browsers throw while obtaining localStorage itself; keep the
@@ -85,6 +101,14 @@ export class RecoveryStorage {
   }
 }
 
+/*
+Own exactly-once delivery for browser mutations across reloads and disconnections.
+
+- Persist the complete path and body before the first network request begins.
+- Keep separate per-request keys so two tabs cannot overwrite each other's work.
+- Replay the same request ID after an uncertain outcome and remove it only after a
+  valid accepted response or a definite client-side rejection.
+*/
 export class PendingRequest {
   constructor(storage, transport = request) {
     this.storage = storage;

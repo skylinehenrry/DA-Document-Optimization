@@ -46,7 +46,7 @@ class JobFixture:
             'from pathlib import Path\n'
             'content = Path("input.csv").read_text()\n'
             'Path("output.csv").write_text(content)\n'
-            f'Path({str(self.sentinel)!r}).write_text("must not execute")\n', encoding="utf-8",
+            f'Path({str(self.sentinel)!r}).write_text("must not execute")\n', encoding = "utf-8",
         )
         self.output = self.root / "documents"
         self.service = WorkflowService(WorkflowStore(self.root / "store"))
@@ -54,22 +54,22 @@ class JobFixture:
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.provider = self.stack.enter_context(patch("backend.graph_enrichment.create_chain",
-                                                      side_effect=AssertionError("No live model calls in app tests")))
+                                                      side_effect = AssertionError("No live model calls in app tests")))
 
     def payload(self):
         return {"script_folder": str(self.project), "da_document_folder": str(self.output),
                 "working_directory": str(self.project), "model": "Ollama"}
 
-    def request(self, kind="analyze", draft_id=None, payload=None):
-        return JobRequest(kind=kind, draft_id=draft_id, payload=self.payload() if payload is None else payload,
-                          request_id=uuid4())
+    def request(self, kind = "analyze", draft_id = None, payload = None):
+        return JobRequest(kind = kind, draft_id = draft_id, payload = self.payload() if payload is None else payload,
+                          request_id = uuid4())
 
-    def open_client(self, service=None, **options):
+    def open_client(self, service = None, **options):
         application = api.create_app(service or self.service, **options)
-        client = self.stack.enter_context(TestClient(application, base_url="http://127.0.0.1"))
+        client = self.stack.enter_context(TestClient(application, base_url = "http://127.0.0.1"))
         return client
 
-    def wait_job(self, client, job_id, state=None):
+    def wait_job(self, client, job_id, state = None):
         deadline = time.monotonic() + 8
         result = None
         while time.monotonic() < deadline:
@@ -82,7 +82,7 @@ class JobFixture:
         self.fail(f"Job did not reach {state or 'a terminal state'}: {result}")
 
     def submit(self, client, request):
-        response = client.post("/api/jobs", json=request.model_dump(mode="json"))
+        response = client.post("/api/jobs", json = request.model_dump(mode = "json"))
         self.assertEqual(response.status_code, 202, response.text)
         return response.json()
 
@@ -94,9 +94,9 @@ class WorkflowJobAPITests(JobFixture, unittest.TestCase):
         for supplied, expected in (({}, self.project.name), ({"title": None}, self.project.name),
                                    ({"title": "  \t\n "}, self.project.name),
                                    ({"title": "  Revenue Operations  "}, "Revenue Operations")):
-            with self.subTest(title=supplied):
+            with self.subTest(title = supplied):
                 payload = {**self.payload(), **supplied}
-                request = self.request(payload=payload)
+                request = self.request(payload = payload)
                 completed = self.wait_job(client, self.submit(client, request)["id"])
                 self.assertEqual(completed["state"], "succeeded", completed)
                 result = completed["result"]
@@ -138,9 +138,9 @@ class WorkflowJobAPITests(JobFixture, unittest.TestCase):
             self.assertEqual(health.json()["current_job_id"], job["id"])
         duplicate = self.submit(client, request)
         self.assertEqual(duplicate["id"], job["id"])
-        changed = request.model_dump(mode="json")
+        changed = request.model_dump(mode = "json")
         changed["payload"]["title"] = "This is a different request"
-        self.assertEqual(client.post("/api/jobs", json=changed).status_code, 409)
+        self.assertEqual(client.post("/api/jobs", json = changed).status_code, 409)
         self.assertEqual(len(client.get("/api/jobs").json()), 1)
         # No request is held open while the computation proceeds. Re-reading
         # saved jobs is also all a newly opened browser needs to recover progress.
@@ -190,13 +190,13 @@ class WorkflowJobAPITests(JobFixture, unittest.TestCase):
         self.assertIsNone(recovered["result"])
         self.assertEqual(self.service.store.list_drafts(), [])
         token = str(uuid4())
-        retry = client.post(f"/api/jobs/{original['id']}/retry", json={"request_id": token})
+        retry = client.post(f"/api/jobs/{original['id']}/retry", json = {"request_id": token})
         self.assertEqual(retry.status_code, 202, retry.text)
-        duplicate = client.post(f"/api/jobs/{original['id']}/retry", json={"request_id": token})
+        duplicate = client.post(f"/api/jobs/{original['id']}/retry", json = {"request_id": token})
         self.assertEqual(duplicate.json()["id"], retry.json()["id"])
         done = self.wait_job(client, retry.json()["id"])
         self.assertEqual(done["state"], "succeeded", done)
-        again = client.post(f"/api/jobs/{original['id']}/retry", json={"request_id": str(uuid4())})
+        again = client.post(f"/api/jobs/{original['id']}/retry", json = {"request_id": str(uuid4())})
         self.assertEqual(again.status_code, 409, again.text)
         self.assertEqual(len(self.service.store.list_drafts()), 1)
 
@@ -204,8 +204,8 @@ class WorkflowJobAPITests(JobFixture, unittest.TestCase):
         request = self.request()
         job = self.repository.enqueue(request)
         self.repository.claim("process-that-exited")
-        graph = asyncio.run(self.service.analyze(AnalysisRequest.model_validate(request.payload), operation_id=job["id"]))
-        self.stack.enter_context(patch.object(self.service, "analyze", side_effect=AssertionError("Committed analysis must not be repeated")))
+        graph = asyncio.run(self.service.analyze(AnalysisRequest.model_validate(request.payload), operation_id = job["id"]))
+        self.stack.enter_context(patch.object(self.service, "analyze", side_effect = AssertionError("Committed analysis must not be repeated")))
         client = self.open_client()
         recovered = self.wait_job(client, job["id"])
         self.assertEqual(recovered["state"], "succeeded", recovered)
@@ -219,8 +219,8 @@ class WorkflowJobAPITests(JobFixture, unittest.TestCase):
         payload = {"expected_revision": 1, "operations": [{"op": "update_node", "id": graph.nodes[0].id, "label": "Saved once"}]}
         job = self.repository.enqueue(self.request("edit", graph.id, payload))
         self.repository.claim("process-that-exited")
-        self.service.edit(graph.id, EditRequest.model_validate(payload), operation_id=job["id"])
-        self.stack.enter_context(patch.object(self.service, "edit", side_effect=AssertionError("Committed edit must not be repeated")))
+        self.service.edit(graph.id, EditRequest.model_validate(payload), operation_id = job["id"])
+        self.stack.enter_context(patch.object(self.service, "edit", side_effect = AssertionError("Committed edit must not be repeated")))
         client = self.open_client()
         recovered = self.wait_job(client, job["id"])
         self.assertEqual(recovered["state"], "succeeded", recovered)
@@ -231,12 +231,12 @@ class WorkflowJobAPITests(JobFixture, unittest.TestCase):
         graph = asyncio.run(self.service.analyze(AnalysisRequest.model_validate(self.payload())))
         job = self.repository.enqueue(self.request("generate", graph.id, {"expected_revision": 1}))
         self.repository.claim("process-that-exited")
-        first = asyncio.run(self.service.generate(graph.id, GenerateRequest(expected_revision=1), operation_id=job["id"]))
+        first = asyncio.run(self.service.generate(graph.id, GenerateRequest(expected_revision = 1), operation_id = job["id"]))
         # A direct client can produce a second report before a restart. Recovery
         # must still point at the exact generation committed by this job.
-        other = asyncio.run(self.service.generate(graph.id, GenerateRequest(expected_revision=1)))
+        other = asyncio.run(self.service.generate(graph.id, GenerateRequest(expected_revision = 1)))
         self.assertNotEqual(first["generation_id"], other["generation_id"])
-        self.stack.enter_context(patch.object(self.service, "generate", side_effect=AssertionError("Committed generation must not repeat")))
+        self.stack.enter_context(patch.object(self.service, "generate", side_effect = AssertionError("Committed generation must not repeat")))
         client = self.open_client()
         recovered = self.wait_job(client, job["id"])
         self.assertEqual(recovered["state"], "succeeded", recovered)
@@ -288,38 +288,38 @@ class WorkflowJobAPITests(JobFixture, unittest.TestCase):
             return await original(*args, **kwargs)
 
         self.stack.enter_context(patch.object(self.service, "analyze", delayed))
-        client = self.open_client(shutdown_callback=lambda: stop_calls.append(True))
+        client = self.open_client(shutdown_callback = lambda: stop_calls.append(True))
         instance = client.get("/api/health").json()["instance_id"]
-        self.assertEqual(client.post("/api/shutdown", json={"instance_id": "stale-instance"}).status_code, 409)
+        self.assertEqual(client.post("/api/shutdown", json = {"instance_id": "stale-instance"}).status_code, 409)
         job = self.submit(client, self.request())
         self.assertTrue(started.wait(2))
-        self.assertEqual(client.post("/api/shutdown", json={"instance_id": instance}).status_code, 409)
+        self.assertEqual(client.post("/api/shutdown", json = {"instance_id": instance}).status_code, 409)
         self.assertFalse(stop_calls)
         release.set()
         self.assertEqual(self.wait_job(client, job["id"])["state"], "succeeded")
-        stopped = client.post("/api/shutdown", json={"instance_id": instance})
+        stopped = client.post("/api/shutdown", json = {"instance_id": instance})
         self.assertEqual(stopped.status_code, 200, stopped.text)
-        self.assertEqual(client.post("/api/jobs", json=self.request().model_dump(mode="json")).status_code, 503)
+        self.assertEqual(client.post("/api/jobs", json = self.request().model_dump(mode = "json")).status_code, 503)
         time.sleep(0.3)
         self.assertEqual(stop_calls, [True])
 
     def test_invalid_job_contract_and_cross_origin_actions_are_rejected_before_queueing(self):
         client = self.open_client()
-        payload = self.request().model_dump(mode="json")
+        payload = self.request().model_dump(mode = "json")
         payload["request_id"] = "not-a-request-uuid"
-        self.assertEqual(client.post("/api/jobs", json=payload).status_code, 422)
-        payload = self.request().model_dump(mode="json")
+        self.assertEqual(client.post("/api/jobs", json = payload).status_code, 422)
+        payload = self.request().model_dump(mode = "json")
         payload["payload"]["max_concurrency"] = 0
-        self.assertEqual(client.post("/api/jobs", json=payload).status_code, 422)
-        payload = self.request().model_dump(mode="json")
-        self.assertEqual(client.post("/api/jobs", headers={"origin": "https://other.example"}, json=payload).status_code, 403)
+        self.assertEqual(client.post("/api/jobs", json = payload).status_code, 422)
+        payload = self.request().model_dump(mode = "json")
+        self.assertEqual(client.post("/api/jobs", headers = {"origin": "https://other.example"}, json = payload).status_code, 403)
         self.assertEqual(client.get("/api/jobs").json(), [])
 
     def test_temporary_shutdown_storage_error_does_not_disable_future_jobs(self):
-        client = self.open_client(shutdown_callback=lambda: None)
+        client = self.open_client(shutdown_callback = lambda: None)
         instance = client.get("/api/health").json()["instance_id"]
-        with patch.object(client.app.state.workflow_jobs.repository, "busy", side_effect=sqlite3.OperationalError("Temporary storage failure")):
-            response = client.post("/api/shutdown", json={"instance_id": instance})
+        with patch.object(client.app.state.workflow_jobs.repository, "busy", side_effect = sqlite3.OperationalError("Temporary storage failure")):
+            response = client.post("/api/shutdown", json = {"instance_id": instance})
         self.assertEqual(response.status_code, 503, response.text)
         self.assertIn("left running", response.json()["detail"])
         self.assertEqual(client.get("/api/health").json()["status"], "ok")
@@ -329,7 +329,7 @@ class WorkflowJobAPITests(JobFixture, unittest.TestCase):
 
 class WorkflowJobShutdownTests(JobFixture, unittest.IsolatedAsyncioTestCase):
     async def test_cancelled_shutdown_check_restores_job_acceptance(self):
-        application = api.create_app(self.service, shutdown_callback=lambda: None)
+        application = api.create_app(self.service, shutdown_callback = lambda: None)
         manager = WorkflowJobs(self.service, application.state.instance_id)
         application.state.workflow_jobs = manager
         endpoint = next(route.endpoint for route in application.routes if getattr(route, "path", None) == "/api/shutdown")
@@ -337,11 +337,11 @@ class WorkflowJobShutdownTests(JobFixture, unittest.IsolatedAsyncioTestCase):
 
         def delayed_check():
             started.set()
-            release.wait(timeout=3)
+            release.wait(timeout = 3)
             return False
 
         with patch.object(manager.repository, "busy", delayed_check):
-            request = asyncio.create_task(endpoint(api.ShutdownRequest(instance_id=application.state.instance_id)))
+            request = asyncio.create_task(endpoint(api.ShutdownRequest(instance_id = application.state.instance_id)))
             try:
                 self.assertTrue(await asyncio.to_thread(started.wait, 2))
                 self.assertFalse(manager.accepting)
@@ -363,13 +363,13 @@ class WorkflowJobShutdownTests(JobFixture, unittest.IsolatedAsyncioTestCase):
         first = self.repository.enqueue(self.request())
         second = self.repository.enqueue(self.request())
         with patch.object(self.service, "analyze", unfinished):
-            worker = WorkflowJobs(self.service, "worker-first", poll_seconds=0.01)
+            worker = WorkflowJobs(self.service, "worker-first", poll_seconds = 0.01)
             await worker.start()
-            await asyncio.wait_for(started.wait(), timeout=2)
+            await asyncio.wait_for(started.wait(), timeout = 2)
             await worker.stop()
         self.assertEqual(self.repository.get(first["id"])["state"], "interrupted")
         self.assertEqual(self.repository.get(second["id"])["state"], "queued")
-        successor = WorkflowJobs(self.service, "worker-after-restart", poll_seconds=0.01)
+        successor = WorkflowJobs(self.service, "worker-after-restart", poll_seconds = 0.01)
         await successor.start()
         try:
             deadline = time.monotonic() + 5
@@ -389,14 +389,14 @@ class WorkflowJobShutdownTests(JobFixture, unittest.IsolatedAsyncioTestCase):
         def delayed_edit(*args, **kwargs):
             result = original(*args, **kwargs)
             started.set()
-            if not release.wait(timeout=3):
+            if not release.wait(timeout = 3):
                 raise TimeoutError("Test failed to release a committed edit")
             return result
 
         payload = {"expected_revision": 1, "operations": [{"op": "update_node", "id": graph.nodes[0].id, "label": "Saved before stop"}]}
         job = self.repository.enqueue(self.request("edit", graph.id, payload))
         with patch.object(self.service, "edit", delayed_edit):
-            worker = WorkflowJobs(self.service, "worker-stop-mid-edit", poll_seconds=0.01)
+            worker = WorkflowJobs(self.service, "worker-stop-mid-edit", poll_seconds = 0.01)
             await worker.start()
             try:
                 self.assertTrue(await asyncio.to_thread(started.wait, 2))

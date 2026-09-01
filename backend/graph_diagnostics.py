@@ -269,7 +269,7 @@ def graph_diagnostics(graph: GraphDocument) -> dict[str, Any]:
             "source_path": first_evidence.source_path if first_evidence else next(iter(sorted(paths)), None),
             "line_start": first_evidence.line_start if first_evidence else None,
             "line_end": first_evidence.line_end if first_evidence else None,
-            "evidence": [item.model_dump(mode="json") for item in issue.evidence],
+            "evidence": [item.model_dump(mode = "json") for item in issue.evidence],
             "node_ids": list(issue.node_ids),
             "edge_ids": list(issue.edge_ids),
         })
@@ -277,20 +277,20 @@ def graph_diagnostics(graph: GraphDocument) -> dict[str, Any]:
     severity_rank = {"error": 0, "warning": 1, "info": 2}
     groups = []
     for code, occurrences in grouped.items():
-        severity = min((item["severity"] for item in occurrences), key=severity_rank.__getitem__)
+        severity = min((item["severity"] for item in occurrences), key = severity_rank.__getitem__)
         title, description, action = _DESCRIPTIONS.get(code, (
             code.replace("_", " ").capitalize(),
             "The analyzer recorded a limitation that may affect dependency coverage.",
             "Review the recorded source locations and confirm any affected relationships in the draft.",
         ))
         category = "parse_failure" if code in _FAILURE_CODES else "info" if severity == "info" else "review"
-        occurrences.sort(key=lambda item: (item["source_path"] or "", item["line_start"] or 0, item["id"]))
+        occurrences.sort(key = lambda item: (item["source_path"] or "", item["line_start"] or 0, item["id"]))
         groups.append({
             "code": code, "title": title, "category": category, "severity": severity,
             "count": len(occurrences), "description": description,
             "suggested_action": action, "occurrences": occurrences,
         })
-    groups.sort(key=lambda item: (severity_rank[item["severity"]], -item["count"], item["code"]))
+    groups.sort(key = lambda item: (severity_rank[item["severity"]], -item["count"], item["code"]))
 
     source_statuses = Counter(source.status for source in graph.sources)
     known_paths = {source.path for source in graph.sources}
@@ -325,7 +325,7 @@ def graph_diagnostics(graph: GraphDocument) -> dict[str, Any]:
         "description": "Source was not read", "reason": node.details.get("reason"),
         "counts": {key: source_counts[path][key] for key in ("error", "warning", "info")},
     } for path, node in skipped.items())
-    sources.sort(key=lambda item: item["path"])
+    sources.sort(key = lambda item: item["path"])
 
     issue_statuses = Counter(issue.severity for issue in graph.issues)
     counts = {"total": len(graph.issues), **{key: issue_statuses[key] for key in ("error", "warning", "info")}}

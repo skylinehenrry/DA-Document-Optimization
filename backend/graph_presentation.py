@@ -40,7 +40,7 @@ def file_card_label(node: GraphNode) -> str:
     return ntpath.basename(value.rstrip("/\\")) or node.label
 
 
-@dataclass(frozen=True)
+@dataclass(frozen = True)
 class DirectConnection:
     """A display group whose members remain individually reviewable."""
 
@@ -58,7 +58,7 @@ class DirectConnection:
     @property
     def label(self) -> str:
         order = {"imports": 0, "calls": 1, "depends_on": 2}
-        kinds = sorted({edge.kind for edge in self.members}, key=lambda kind: (order.get(kind, 3), kind))
+        kinds = sorted({edge.kind for edge in self.members}, key = lambda kind: (order.get(kind, 3), kind))
         return " / ".join(kind.replace("_", " ") for kind in kinds) + f" · {len(self.members)} references"
 
 
@@ -83,8 +83,8 @@ def direct_connections(graph: GraphDocument) -> tuple[DirectConnection, ...]:
         groups[key].append(edge)
     return tuple(
         DirectConnection(
-            id=stable_id("connection", source, target, kind), source=source, target=target,
-            members=tuple(sorted(members, key=lambda edge: edge.id)),
+            id = stable_id("connection", source, target, kind), source = source, target = target,
+            members = tuple(sorted(members, key = lambda edge: edge.id)),
         )
         for (source, target, kind), members in sorted(groups.items())
     )

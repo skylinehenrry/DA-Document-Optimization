@@ -1,4 +1,11 @@
-"""End-to-end local API tests: real parsers/store/renderer, no live models."""
+"""Exercise the local API with real parsers, storage, edits, and rendering.
+
+- Verify draft creation, history, review, export, import, generation, and downloads.
+- Confirm stale revisions, malformed inputs, missing artifacts, and unsafe requests
+  return explicit errors without corrupting the saved workflow.
+- Use temporary project and output folders so tests cannot alter the user's library.
+- Replace optional model work with local behavior; no provider or sign-in is used.
+"""
 
 import atexit
 import hashlib
@@ -34,23 +41,23 @@ class WorkflowAPITests(unittest.TestCase):
         self.project = self.root / "scripts"
         self.project.mkdir()
         self.source = 'from pathlib import Path\n\ndef clean():\n    text = Path("raw.csv").read_text()\n    Path("clean.csv").write_text(text)\n'
-        (self.project / "worker.py").write_text(self.source, encoding="utf-8")
-        (self.project / "main.py").write_text("import worker\nworker.clean()\n", encoding="utf-8")
+        (self.project / "worker.py").write_text(self.source, encoding = "utf-8")
+        (self.project / "main.py").write_text("import worker\nworker.clean()\n", encoding = "utf-8")
         # If source code were executed during analysis, this would leave proof.
         self.sentinel = self.root / "must-not-execute.txt"
-        (self.project / "never_execute.py").write_text(f"from pathlib import Path\nPath({str(self.sentinel)!r}).write_text('unsafe')\n", encoding="utf-8")
+        (self.project / "never_execute.py").write_text(f"from pathlib import Path\nPath({str(self.sentinel)!r}).write_text('unsafe')\n", encoding = "utf-8")
         self.output = self.root / "documents"
         self.service = WorkflowService(WorkflowStore(self.root / "store"))
         self.app = api.create_app(self.service)
-        deny_provider = patch("backend.graph_enrichment.create_chain", side_effect=AssertionError("Tests must not call live models"))
+        deny_provider = patch("backend.graph_enrichment.create_chain", side_effect = AssertionError("Tests must not call live models"))
         self.provider = deny_provider.start()
         self.addCleanup(deny_provider.stop)
-        self.client = TestClient(self.app, base_url="http://127.0.0.1")
+        self.client = TestClient(self.app, base_url = "http://127.0.0.1")
         self.client.__enter__()
         self.addCleanup(self.client.__exit__, None, None, None)
 
     def analyze(self):
-        response = self.client.post("/api/drafts", json={"script_folder": str(self.project),
+        response = self.client.post("/api/drafts", json = {"script_folder": str(self.project),
             "da_document_folder": str(self.output), "working_directory": str(self.project)})
         self.assertEqual(response.status_code, 201, response.text)
         self.assertFalse(self.sentinel.exists())
@@ -75,13 +82,13 @@ class WorkflowAPITests(unittest.TestCase):
         self.assertIn(removed_id, {edge["id"] for edge in draft["graph"]["edges"]})
         parent_map[wrapper].remove(wrapper)
         base = f"/api/drafts/{draft['draft_id']}"
-        imported = self.client.post(base + "/import", json={"expected_revision": 1, "xml": ET.tostring(tree, encoding="unicode")})
+        imported = self.client.post(base + "/import", json = {"expected_revision": 1, "xml": ET.tostring(tree, encoding = "unicode")})
         self.assertEqual(imported.status_code, 200, imported.text)
         reviewed = imported.json()
         self.assertEqual(reviewed["revision"], 2)
         self.assertNotIn(removed_id, {edge["id"] for edge in reviewed["graph"]["edges"]})
-        (self.project / "worker.py").write_text("this is no longer valid python : : :", encoding="utf-8")
-        generated = self.client.post(base + "/generate", json={"expected_revision": 2})
+        (self.project / "worker.py").write_text("this is no longer valid python : : :", encoding = "utf-8")
+        generated = self.client.post(base + "/generate", json = {"expected_revision": 2})
         self.assertEqual(generated.status_code, 200, generated.text)
         self.provider.assert_not_called()
         result = generated.json()
@@ -106,10 +113,10 @@ class WorkflowAPITests(unittest.TestCase):
         old_xml = self.client.get(draft["outputs"]["draft_diagram"]).text
         node_id = draft["graph"]["nodes"][0]["id"]
         edit = {"expected_revision": 1, "operations": [{"op": "update_node", "id": node_id, "label": "Reviewed label"}]}
-        self.assertEqual(self.client.patch(base, json=edit).status_code, 200)
-        self.assertEqual(self.client.patch(base, json=edit).status_code, 409)
-        self.assertEqual(self.client.post(base + "/generate", json={"expected_revision": 1}).status_code, 409)
-        stale_import = self.client.post(base + "/import", json={"expected_revision": 2, "xml": old_xml})
+        self.assertEqual(self.client.patch(base, json = edit).status_code, 200)
+        self.assertEqual(self.client.patch(base, json = edit).status_code, 409)
+        self.assertEqual(self.client.post(base + "/generate", json = {"expected_revision": 1}).status_code, 409)
+        stale_import = self.client.post(base + "/import", json = {"expected_revision": 2, "xml": old_xml})
         self.assertEqual(stale_import.status_code, 422)
         self.assertEqual(self.client.get(base).json()["revision"], 2)
         history = self.client.get(base + "/history").json()
@@ -118,7 +125,7 @@ class WorkflowAPITests(unittest.TestCase):
     def test_same_project_reanalysis_creates_a_new_draft_and_keeps_old_artifacts(self):
         first = self.analyze()
         base = f"/api/drafts/{first['draft_id']}"
-        generated = self.client.post(base + "/generate", json={"expected_revision": 1}).json()
+        generated = self.client.post(base + "/generate", json = {"expected_revision": 1}).json()
         first_html = generated["outputs"]["flowchart"]
         second = self.analyze()
         self.assertNotEqual(first["draft_id"], second["draft_id"])
@@ -131,7 +138,7 @@ class WorkflowAPITests(unittest.TestCase):
         draft = self.analyze()
         base = f"/api/drafts/{draft['draft_id']}"
         edge_id = draft["graph"]["edges"][0]["id"]
-        response = self.client.patch(base, json={"expected_revision": 1, "operations": [
+        response = self.client.patch(base, json = {"expected_revision": 1, "operations": [
             {"op": "remove_edge", "id": edge_id},
             {"op": "add_edge", "edge": {"source": "missing", "target": "also_missing", "kind": "calls"}},
         ]})
@@ -141,12 +148,12 @@ class WorkflowAPITests(unittest.TestCase):
         self.assertEqual(self.app.state.active_workflow_jobs, 0)
 
     def test_analysis_failure_is_visible_and_requires_acknowledgment(self):
-        (self.project / "broken.py").write_text("def broken(:", encoding="utf-8")
+        (self.project / "broken.py").write_text("def broken(:", encoding = "utf-8")
         draft = self.analyze()
         self.assertTrue(draft["review"]["has_analysis_errors"])
         base = f"/api/drafts/{draft['draft_id']}"
-        self.assertEqual(self.client.post(base + "/generate", json={"expected_revision": 1}).status_code, 409)
-        accepted = self.client.post(base + "/generate", json={"expected_revision": 1, "acknowledge_incomplete": True})
+        self.assertEqual(self.client.post(base + "/generate", json = {"expected_revision": 1}).status_code, 409)
+        accepted = self.client.post(base + "/generate", json = {"expected_revision": 1, "acknowledge_incomplete": True})
         self.assertEqual(accepted.status_code, 200, accepted.text)
         self.assertTrue(accepted.json()["generation"]["has_analysis_errors"])
         self.assertIn("broken.py", self.client.get(accepted.json()["outputs"]["flowchart"]).text)
@@ -163,22 +170,22 @@ class WorkflowAPITests(unittest.TestCase):
     def test_generation_inherits_the_saved_local_provider_when_not_overridden(self):
         from backend.workflow_service import GenerateRequest, saved_model_options
         settings = {"model": "Ollama", "language": "Japanese", "max_concurrency": 2}
-        inherited = saved_model_options(GenerateRequest(expected_revision=1), settings)
+        inherited = saved_model_options(GenerateRequest(expected_revision = 1), settings)
         self.assertEqual((inherited.model, inherited.language, inherited.max_concurrency), ("Ollama", "Japanese", 2))
-        explicit = saved_model_options(GenerateRequest(expected_revision=1, model="OpenAI", language="English"), settings)
+        explicit = saved_model_options(GenerateRequest(expected_revision = 1, model = "OpenAI", language = "English"), settings)
         self.assertEqual((explicit.model, explicit.language, explicit.max_concurrency), ("OpenAI", "English", 2))
 
     def test_download_serves_the_verified_bytes_even_if_file_changes_after_read(self):
         draft = self.analyze()
         base = f"/api/drafts/{draft['draft_id']}"
-        generated = self.client.post(base + "/generate", json={"expected_revision": 1}).json()
+        generated = self.client.post(base + "/generate", json = {"expected_revision": 1}).json()
         original = self.client.get(generated["outputs"]["flowchart_download"]).content
         real_read = Path.read_bytes
 
         def replaced_after_read(path):
             data = real_read(path)
             if path.name == "workflow_flowchart.html":
-                path.write_text("Replaced after checksum input was captured", encoding="utf-8")
+                path.write_text("Replaced after checksum input was captured", encoding = "utf-8")
             return data
 
         with patch.object(Path, "read_bytes", replaced_after_read):
@@ -192,8 +199,8 @@ class WorkflowAPITests(unittest.TestCase):
         self.assertEqual(frontend.headers["x-frame-options"], "DENY")
         self.assertEqual(frontend.headers["content-security-policy"], "frame-ancestors 'none'")
         self.assertEqual(frontend.headers["referrer-policy"], "no-referrer")
-        self.assertEqual(self.client.get("/api/drafts", headers={"host": "untrusted.example"}).status_code, 400)
-        rejected = self.client.post("/api/drafts", headers={"origin": "https://untrusted.example"}, json={})
+        self.assertEqual(self.client.get("/api/drafts", headers = {"host": "untrusted.example"}).status_code, 400)
+        rejected = self.client.post("/api/drafts", headers = {"origin": "https://untrusted.example"}, json = {})
         self.assertEqual(rejected.status_code, 403)
         self.assertEqual(self.client.get("/outputs/.workflow_store/workflows.sqlite3").status_code, 404)
         self.assertEqual(self.client.get("/api/drafts/no_such_draft").status_code, 404)
@@ -214,8 +221,8 @@ import backend.main
 assert before == os.getcwd()
 print('offline import works')
 """
-        result = subprocess.run([sys.executable, "-B", "-c", code], cwd=Path(__file__).resolve().parents[1],
-                                env={**os.environ, "DA_WORKFLOW_STORE": str(self.root / "offline-store")}, capture_output=True, text=True)
+        result = subprocess.run([sys.executable, "-B", "-c", code], cwd = Path(__file__).resolve().parents[1],
+                                env = {**os.environ, "DA_WORKFLOW_STORE": str(self.root / "offline-store")}, capture_output = True, text = True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("offline import works", result.stdout)
 

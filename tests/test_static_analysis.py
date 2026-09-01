@@ -1,4 +1,11 @@
-"""Regression checks for graph accuracy and for refusing unsafe guesses."""
+"""Protect offline extraction accuracy and the analyzer's refusal to guess.
+
+- Cover direct Python, SQL, batch, and Alteryx relationships with source evidence.
+- Check Windows, POSIX, relative, database, and workflow-directory identity rules.
+- Exercise scopes, branches, loops, imports, aliases, dynamic values, and failures
+  that previously produced false links or silently missing diagnostics.
+- Test sources are read as text and are never imported, launched, or executed.
+"""
 
 import hashlib
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -17,11 +24,11 @@ class StaticAnalysisTests(unittest.TestCase):
 
     def write(self, relative, content):
         path = self.root / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents = True, exist_ok = True)
         if isinstance(content, bytes):
             path.write_bytes(content)
         else:
-            path.write_text(content, encoding="utf-8")
+            path.write_text(content, encoding = "utf-8")
         return path
 
     def analyze(self, **options):
@@ -241,7 +248,7 @@ class StaticAnalysisTests(unittest.TestCase):
         unresolved, _ = self.analyze()
         self.assertEqual(len([node for node in unresolved.nodes if node.kind == "file"]), 2)
         self.assertTrue(all(edge.status == "proposed" for edge in unresolved.edges))
-        resolved, _ = self.analyze(working_directory=str(self.root))
+        resolved, _ = self.analyze(working_directory = str(self.root))
         resources = [node for node in resolved.nodes if node.kind == "file"]
         self.assertEqual(len(resources), 1)
         file_id = resources[0].id
@@ -261,7 +268,7 @@ class StaticAnalysisTests(unittest.TestCase):
 
     def test_pandas_reader_writer_and_open_readwrite_mode_have_correct_direction(self):
         self.write("etl.py", "import pandas as pd\ndf=pd.read_csv('input.csv')\ndf.to_parquet('output.parquet')\nopen('state.bin', 'r+b')\n")
-        graph, _ = self.analyze(working_directory=str(self.root))
+        graph, _ = self.analyze(working_directory = str(self.root))
         relations = self.relations(graph)
         self.assertIn(("input.csv", "etl.py", "reads"), relations)
         self.assertIn(("etl.py", "output.parquet", "writes"), relations)
@@ -270,7 +277,7 @@ class StaticAnalysisTests(unittest.TestCase):
 
     def test_dynamic_paths_modes_kwargs_and_cwd_changes_require_review(self):
         self.write("main.py", "import os\nopen(name)\nopen('mode.csv', mode=mode)\nopen('kwargs.csv', **settings)\nos.chdir(location)\nopen('later.csv')\n")
-        graph, _ = self.analyze(working_directory=str(self.root))
+        graph, _ = self.analyze(working_directory = str(self.root))
         codes = self.codes(graph)
         self.assertTrue({"dynamic_file_path", "dynamic_file_mode", "dynamic_call_kwargs", "runtime_cwd_mutation"}.issubset(codes))
         files = [node for node in graph.nodes if node.kind == "file"]
@@ -308,7 +315,7 @@ class StaticAnalysisTests(unittest.TestCase):
             for edge in graph.edges
         })
         self.assertIn("launch_target_unresolved", self.codes(graph))
-        graph, _ = self.analyze(working_directory=str(self.root))
+        graph, _ = self.analyze(working_directory = str(self.root))
         self.assertIn(("main.py", "child.py", "calls"), self.relations(graph))
 
     def test_windows_launches_resolve_only_against_a_matching_windows_project_root(self):
@@ -322,7 +329,7 @@ class StaticAnalysisTests(unittest.TestCase):
             (PurePosixPath("/workspace"), "C:/workspace/jobs/child.py", False),
         ]
         for root, invocation, resolved in cases:
-            with self.subTest(root=str(root), invocation=invocation):
+            with self.subTest(root = str(root), invocation = invocation):
                 # Pure path flavors exercise Windows and UNC semantics on every
                 # test host, without needing or accessing a foreign filesystem.
                 analysis = _Analysis(self.root, None, None, None, "Test", None)
@@ -341,7 +348,7 @@ class StaticAnalysisTests(unittest.TestCase):
     def test_loop_assignments_and_imports_are_not_assumed_to_exist_after_exit(self):
         self.write("worker.py", "def run(): pass\n")
         self.write("main.py", "outside='stable.csv'\nfor item in choices:\n    filename='loop.csv'\n    import worker as for_worker\nopen(filename)\nfor_worker.run()\nwhile condition:\n    other='while.csv'\n    import worker as while_worker\nopen(other)\nwhile_worker.run()\nopen(outside)\n")
-        graph, _ = self.analyze(working_directory=str(self.root))
+        graph, _ = self.analyze(working_directory = str(self.root))
         self.assertFalse(any(edge.kind == "calls" for edge in graph.edges))
         self.assertEqual({node.label for node in graph.nodes if node.kind == "file"}, {"stable.csv"})
         self.assertIn("loop_binding_unresolved", self.codes(graph))
@@ -354,7 +361,7 @@ class StaticAnalysisTests(unittest.TestCase):
         #   producing a useful diagnostic at the file operation that needs it.
         self.write("ordinary.py", "count=0\nfor item in values:\n    count += 1\nwhile count:\n    count -= 1\n")
         self.write("dynamic.py", "for item in values:\n    filename='possible.csv'\nopen(filename)\n")
-        graph, _ = self.analyze(working_directory=str(self.root))
+        graph, _ = self.analyze(working_directory = str(self.root))
         statuses = {source.path: source.status for source in graph.sources}
         self.assertEqual(statuses, {"ordinary.py": "parsed", "dynamic.py": "partial"})
         self.assertNotIn("loop_binding_unresolved", self.codes(graph))
@@ -363,7 +370,7 @@ class StaticAnalysisTests(unittest.TestCase):
 
     def test_sql_ctes_are_not_tables_but_real_same_named_qualified_tables_are(self):
         self.write("query.sql", "WITH t AS (SELECT * FROM raw.input) INSERT INTO output.final SELECT * FROM t JOIN raw.t ON 1=1;\n")
-        graph, _ = self.analyze(database_namespace="warehouse")
+        graph, _ = self.analyze(database_namespace = "warehouse")
         self.assertEqual({node.label for node in graph.nodes if node.kind == "table"}, {"raw.input", "output.final", "raw.t"})
         relations = self.relations(graph)
         self.assertIn(("query.sql", "output.final", "writes"), relations)
@@ -372,13 +379,13 @@ class StaticAnalysisTests(unittest.TestCase):
 
     def test_nonrecursive_cte_can_read_physical_table_with_its_own_name(self):
         self.write("query.sql", "WITH x AS (SELECT * FROM x) SELECT * FROM x;\n")
-        graph, _ = self.analyze(database_namespace="warehouse")
+        graph, _ = self.analyze(database_namespace = "warehouse")
         self.assertEqual(len([node for node in graph.nodes if node.kind == "table"]), 1)
         self.assertEqual(len(graph.edges), 1)
 
     def test_sql_update_delete_aliases_and_foreign_keys_do_not_invent_resources(self):
         self.write("query.sql", "UPDATE t SET value=s.value FROM dbo.target t JOIN dbo.source s ON t.id=s.id;\nDELETE t FROM dbo.target t JOIN dbo.source s ON t.id=s.id;\nCREATE TABLE created(id INT REFERENCES foreign_table(id));")
-        graph, _ = self.analyze(database_namespace="warehouse", sql_dialect="tsql")
+        graph, _ = self.analyze(database_namespace = "warehouse", sql_dialect = "tsql")
         self.assertEqual({node.label for node in graph.nodes if node.kind == "table"}, {"dbo.target", "dbo.source", "created"})
         relations = self.relations(graph)
         self.assertIn(("query.sql", "dbo.target", "writes"), relations)
@@ -391,16 +398,16 @@ class StaticAnalysisTests(unittest.TestCase):
         graph, _ = self.analyze()
         self.assertEqual(len([node for node in graph.nodes if node.kind == "table"]), 3)
         self.assertIn("database_namespace_unresolved", self.codes(graph))
-        graph, _ = self.analyze(database_namespace="host/db")
+        graph, _ = self.analyze(database_namespace = "host/db")
         self.assertEqual(len([node for node in graph.nodes if node.kind == "table"]), 2)
-        other, _ = self.analyze(database_namespace="other-host/db")
+        other, _ = self.analyze(database_namespace = "other-host/db")
         self.assertTrue({node.id for node in graph.nodes if node.kind == "table"}.isdisjoint(
             {node.id for node in other.nodes if node.kind == "table"}))
 
     def test_sql_temporary_tables_do_not_merge_between_sessions(self):
         for name in ("a.sql", "b.sql"):
             self.write(name, "CREATE TEMP TABLE tmp AS SELECT * FROM shared; SELECT * FROM tmp;")
-        graph, _ = self.analyze(database_namespace="warehouse")
+        graph, _ = self.analyze(database_namespace = "warehouse")
         tables = [node for node in graph.nodes if node.kind == "table"]
         self.assertEqual(len(tables), 3)
         self.assertEqual(len([node for node in tables if node.details["session_local"]]), 2)
@@ -408,7 +415,7 @@ class StaticAnalysisTests(unittest.TestCase):
     def test_unsupported_sql_and_parse_failures_are_visible(self):
         self.write("unsupported.sql", "EXEC some_procedure; SELECT * FROM known;")
         self.write("broken.sql", "SELECT * FROM (")
-        graph, snapshots = self.analyze(database_namespace="warehouse", sql_dialect="tsql")
+        graph, snapshots = self.analyze(database_namespace = "warehouse", sql_dialect = "tsql")
         self.assertEqual(set(snapshots), {"broken.sql", "unsupported.sql"})
         self.assertIn("unsupported_sql_statement", self.codes(graph))
         self.assertIn("sql_parse_error", self.codes(graph))
@@ -452,7 +459,7 @@ class StaticAnalysisTests(unittest.TestCase):
     def test_batch_dynamic_cwd_does_not_reuse_initial_cwd(self):
         self.write("child.py", "pass\n")
         self.write("main.bat", "cd %SOMEWHERE%\npython child.py\n")
-        graph, _ = self.analyze(working_directory=str(self.root))
+        graph, _ = self.analyze(working_directory = str(self.root))
         calls = [edge for edge in graph.edges if edge.kind == "calls"]
         self.assertEqual(len(calls), 1)
         target = next(node for node in graph.nodes if node.id == calls[0].target)

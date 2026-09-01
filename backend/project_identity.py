@@ -52,7 +52,7 @@ def flowchart_filename(title: str) -> str:
     stem = " ".join(stem.split()).strip(" .")
     if stem.lower().endswith(".html"):
         stem = stem[:-5].rstrip(" .")
-    stem = stem.encode("utf-8")[:180].decode("utf-8", errors="ignore").rstrip(" .") or "Workflow Flowchart"
+    stem = stem.encode("utf-8")[:180].decode("utf-8", errors = "ignore").rstrip(" .") or "Workflow Flowchart"
     device = stem.split(".", 1)[0].rstrip().upper()
     reserved = {"CON", "PRN", "AUX", "NUL", "CLOCK$"}
     reserved.update(prefix + suffix for prefix in ("COM", "LPT") for suffix in "123456789\u00b9\u00b2\u00b3")
@@ -69,9 +69,9 @@ def flowchart_attachment(title: str) -> str:
     - User labels cannot insert new headers, quote delimiters or path separators.
     """
     filename = flowchart_filename(title)
-    fallback_stem = unicodedata.normalize("NFKD", filename[:-5]).encode("ascii", errors="ignore").decode("ascii")
+    fallback_stem = unicodedata.normalize("NFKD", filename[:-5]).encode("ascii", errors = "ignore").decode("ascii")
     fallback = flowchart_filename(fallback_stem)
     header = f'attachment; filename="{fallback}"'
     if filename != fallback:
-        header += "; filename*=UTF-8''" + quote(filename, safe="")
+        header += "; filename*=UTF-8''" + quote(filename, safe = "")
     return header

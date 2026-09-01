@@ -1,17 +1,17 @@
-"""Conservative, offline project dependency extraction; this is not a full CFG.
+"""Extract conservative project dependencies offline; this is not a full CFG.
 
-The analyzer never imports or executes project code and never asks a model to
-guess topology.  Confirmed means a relationship is present in source syntax,
-not that its branch executes or that a program succeeds.  Python imports and
-simple literal IO/calls, SQL table IO, batch launches, and explicit Alteryx tool
-wiring are covered.  Reflection, arbitrary data flow, shell expansion, database
-procedures and many application-specific APIs require review.
-
-Relative runtime paths are deliberately source-scoped unless the caller supplies
-working_directory, or an expression explicitly anchors a path to __file__ (or
-the equivalent batch/Alteryx workflow-directory token).  Database identities are
-also source-scoped without database_namespace.  Missing context becomes an issue
-and a proposed edge, never an accidental join between equally named resources.
+- Never import or execute project code and never ask a model to guess topology.
+- Treat ``confirmed`` as source-syntax evidence, not proof that a branch executes
+  or that the containing program succeeds at runtime.
+- Cover Python imports and literal IO/calls, SQL table IO, batch launches, and
+  explicit Alteryx tool wiring with exact source evidence.
+- Leave reflection, arbitrary data flow, shell expansion, stored procedures, and
+  application-specific APIs visible as review limitations rather than guessed links.
+- Scope relative runtime paths to their source unless a working directory or an
+  explicit source/workflow-directory anchor supplies shared identity.
+- Scope database identities similarly when no database namespace is supplied.
+- Convert missing context into a diagnostic and, where useful, a proposed edge;
+  never merge equally named resources by accident.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ _DEFAULT_CWD = object()
 
 
 def _json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return json.dumps(value, ensure_ascii = False, separators = (",", ":"), sort_keys = True)
 
 
 def _is_absolute(value: str) -> bool:
@@ -99,12 +99,12 @@ def _project_relative_source(value: str, root: Path) -> str | None:
         return None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen = True)
 class _PathValue:
     text: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen = True)
 class _ImportReference:
     source_path: str
     symbol: str | None = None
@@ -139,7 +139,7 @@ class _Analysis:
             return self.callables[rel]
         names: set[str] = set()
         try:
-            tree = ast.parse(self.snapshots[rel], filename=rel)
+            tree = ast.parse(self.snapshots[rel], filename = rel)
 
             def collect(body: list[ast.stmt], prefix: str = "") -> None:
                 bindings = _Bindings()
@@ -163,8 +163,8 @@ class _Analysis:
         end = getattr(node, "end_lineno", None) if node is not None else start
         lines = self.snapshots.get(rel, "").splitlines()
         excerpt = "\n".join(lines[(start or 1) - 1:min(end or start or 1, (start or 1) + 3)])[:1000]
-        return Evidence(source_path=rel, line_start=start, line_end=end, excerpt=excerpt,
-                        extractor=extractor, note=note)
+        return Evidence(source_path = rel, line_start = start, line_end = end, excerpt = excerpt,
+                        extractor = extractor, note = note)
 
     def issue(self, code: str, message: str, rel: str | None = None,
               evidence: Evidence | None = None, severity: str = "warning",
@@ -172,9 +172,9 @@ class _Analysis:
         issue_id = stable_id("issue", code, rel or "", message,
                              str(evidence.line_start if evidence else ""))
         self.issues[issue_id] = GraphIssue(
-            id=issue_id, code=code, message=message, severity=severity,
-            node_ids=node_ids or ([self.script_ids[rel]] if rel in self.script_ids else []),
-            evidence=[evidence] if evidence else [],
+            id = issue_id, code = code, message = message, severity = severity,
+            node_ids = node_ids or ([self.script_ids[rel]] if rel in self.script_ids else []),
+            evidence = [evidence] if evidence else [],
         )
         if rel in self.sources and severity != "info" and self.sources[rel].status == "parsed":
             self.sources[rel].status = "partial"
@@ -190,25 +190,25 @@ class _Analysis:
             if status == "confirmed":
                 edge.status = "confirmed"
         else:
-            self.edges[edge_id] = GraphEdge(id=edge_id, source=source, target=target, kind=kind,
-                                            evidence=[evidence], status=status, condition=condition)
+            self.edges[edge_id] = GraphEdge(id = edge_id, source = source, target = target, kind = kind,
+                                            evidence = [evidence], status = status, condition = condition)
 
     def discover(self) -> None:
         candidates: list[tuple[str, Path]] = []
         total_bytes = 0
 
         def walk_error(error: OSError) -> None:
-            self.issue("discovery_error", f"Could not inspect directory: {error}", severity="error")
+            self.issue("discovery_error", f"Could not inspect directory: {error}", severity = "error")
 
-        for directory, dirs, files in os.walk(self.root, followlinks=False, onerror=walk_error):
+        for directory, dirs, files in os.walk(self.root, followlinks = False, onerror = walk_error):
             retained = []
             for name in sorted(dirs):
                 path = Path(directory) / name
                 rel = path.relative_to(self.root).as_posix()
                 if name.casefold() in EXCLUDED_DIRECTORIES:
-                    self.issue("directory_skipped", f"Excluded generated, dependency or cache directory: {rel}", severity="info")
+                    self.issue("directory_skipped", f"Excluded generated, dependency or cache directory: {rel}", severity = "info")
                 elif path.is_symlink():
-                    self.issue("directory_symlink_skipped", f"Directory symlink was not followed: {rel}", severity="info")
+                    self.issue("directory_symlink_skipped", f"Directory symlink was not followed: {rel}", severity = "info")
                 else:
                     retained.append(name)
             dirs[:] = retained
@@ -223,8 +223,8 @@ class _Analysis:
             kind = SCRIPT_TYPES[path.suffix.lower()]
             script_id = stable_id("script", rel)
             self.script_ids[rel] = script_id
-            node = GraphNode(id=script_id, label=rel[:1000], kind="script", script_type=kind,
-                             details={"relative_path": rel})
+            node = GraphNode(id = script_id, label = rel[:1000], kind = "script", script_type = kind,
+                             details = {"relative_path": rel})
             self.nodes[script_id] = node
             try:
                 # Preserve a visible skipped node when the shared source-path
@@ -249,7 +249,7 @@ class _Analysis:
                 total_bytes += len(raw)
             except (OSError, ValueError) as exc:
                 node.details.update({"analysis_status": "skipped", "reason": str(exc)})
-                self.issue("source_skipped", f"Skipped {rel}: {exc}", rel, severity="error")
+                self.issue("source_skipped", f"Skipped {rel}: {exc}", rel, severity = "error")
                 continue
 
             encoding, lossy = "utf-8", False
@@ -263,14 +263,14 @@ class _Analysis:
                 text = raw.decode(encoding)
             except (UnicodeError, SyntaxError, LookupError):
                 encoding, lossy = "utf-8", True
-                text = raw.decode("utf-8", errors="replace")
-            self.sources[rel] = SourceFile(path=rel, sha256=hashlib.sha256(raw).hexdigest(),
-                                          script_type=kind, size_bytes=len(raw), encoding=encoding)
+                text = raw.decode("utf-8", errors = "replace")
+            self.sources[rel] = SourceFile(path = rel, sha256 = hashlib.sha256(raw).hexdigest(),
+                                          script_type = kind, size_bytes = len(raw), encoding = encoding)
             self.snapshots[rel] = text
             node.source_path = rel
             if lossy:
                 self.sources[rel].status = "failed"
-                self.issue("source_encoding_loss", "Source was not valid in its declared encoding; the snapshot contains replacement characters and is not used to infer dependencies.", rel, severity="error")
+                self.issue("source_encoding_loss", "Source was not valid in its declared encoding; the snapshot contains replacement characters and is not used to infer dependencies.", rel, severity = "error")
         for rel, source in self.sources.items():
             if source.script_type != "python":
                 continue
@@ -291,8 +291,8 @@ class _Analysis:
         key = "file:" + _json({"path": path, "scope": rel if unresolved else "absolute"})
         node_id = stable_id("file", key)
         if node_id not in self.nodes:
-            self.nodes[node_id] = GraphNode(id=node_id, kind="file", label=value[:1000], resource_key=key,
-                details={"normalized_path": path, "resolution": "runtime_cwd_unknown" if unresolved else "absolute_or_uri",
+            self.nodes[node_id] = GraphNode(id = node_id, kind = "file", label = value[:1000], resource_key = key,
+                details = {"normalized_path": path, "resolution": "runtime_cwd_unknown" if unresolved else "absolute_or_uri",
                          **({"scope_source": rel} if unresolved else {})})
         if unresolved:
             self.issue("relative_path_unresolved",
@@ -317,8 +317,8 @@ class _Analysis:
         if session_local:
             label += " (temporary)"
         if table_id not in self.nodes:
-            self.nodes[table_id] = GraphNode(id=table_id, kind="table", label=label[:1000], resource_key=key,
-                details={"identifiers": parts, "database_namespace": self.namespace,
+            self.nodes[table_id] = GraphNode(id = table_id, kind = "table", label = label[:1000], resource_key = key,
+                details = {"identifiers": parts, "database_namespace": self.namespace,
                          "scope_source": rel if not self.namespace or session_local else None,
                          "session_context": context, "session_local": session_local})
         if not self.namespace:
@@ -386,7 +386,7 @@ class _Analysis:
         elif any(Path(arg).suffix.lower() in SCRIPT_TYPES for arg in args[1:]):
             self.issue("unsupported_script_launcher", "A command mentions source files but its invocation semantics are unsupported.", rel, evidence)
         if target is not None:
-            self.launch(rel, target, evidence, cwd, proposed=shell, owner=owner)
+            self.launch(rel, target, evidence, cwd, proposed = shell, owner = owner)
 
     def finish(self) -> GraphDocument:
         digest = hashlib.sha256()
@@ -395,13 +395,13 @@ class _Analysis:
             digest.update(b"\n")
         source_digest = digest.hexdigest()
         return GraphDocument(
-            id=f"graph_{uuid4().hex}", title=self.title,
-            project_root=self.root.as_posix(), source_digest=source_digest,
-            sources=[self.sources[key] for key in sorted(self.sources)],
-            nodes=sorted(self.nodes.values(), key=lambda n: n.id),
-            edges=sorted(self.edges.values(), key=lambda e: e.id),
-            issues=sorted(self.issues.values(), key=lambda i: i.id),
-            analysis_options={"working_directory": self.cwd, "sql_dialect": self.dialect,
+            id = f"graph_{uuid4().hex}", title = self.title,
+            project_root = self.root.as_posix(), source_digest = source_digest,
+            sources = [self.sources[key] for key in sorted(self.sources)],
+            nodes = sorted(self.nodes.values(), key = lambda n: n.id),
+            edges = sorted(self.edges.values(), key = lambda e: e.id),
+            issues = sorted(self.issues.values(), key = lambda i: i.id),
+            analysis_options = {"working_directory": self.cwd, "sql_dialect": self.dialect,
                               "database_namespace": self.namespace, "extractor_version": "1.1",
                               "scope": "static_project_dependencies_not_full_control_flow",
                               "python_import_search": "project root and importing source directory; conflicting and nonstandard import roots require review",
@@ -508,7 +508,7 @@ class _Python(ast.NodeVisitor):
 
     def ev(self, node: ast.AST, note: str | None = None) -> Evidence:
         scope = "Python scope: " + (".".join(self.scopes) or "<module>")
-        return self.a.evidence(self.rel, "python_ast", node, note=f"{scope}. {note}" if note else scope)
+        return self.a.evidence(self.rel, "python_ast", node, note = f"{scope}. {note}" if note else scope)
 
     def warning(self, code: str, message: str, node: ast.AST) -> None:
         self.a.issue(code, message, self.rel, self.ev(node))
@@ -666,11 +666,11 @@ class _Python(ast.NodeVisitor):
     def import_edge(self, target: str, node: ast.AST) -> None:
         if target != self.rel:
             self.a.edge(self.a.script_ids[self.rel], self.a.script_ids[target], "imports", self.ev(node),
-                        condition="; ".join(self.conditions) or None)
+                        condition = "; ".join(self.conditions) or None)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
-            target = self.find_module(alias.name, node=node)
+            target = self.find_module(alias.name, node = node)
             if self._last_import_ambiguous:
                 continue
             bound = alias.asname or alias.name.split(".")[0]
@@ -787,7 +787,7 @@ class _Python(ast.NodeVisitor):
                 expressions.append(generator.iter)
             expressions.extend(generator.ifs)
         expressions.extend((node.key, node.value) if isinstance(node, ast.DictComp) else (node.elt,))
-        self._scope(node, expressions, bound_names=bound)
+        self._scope(node, expressions, bound_names = bound)
 
     visit_ListComp = _comprehension
     visit_SetComp = _comprehension
@@ -888,7 +888,7 @@ class _Python(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if node.value is not None:
-            proxy = ast.Assign(targets=[node.target], value=node.value)
+            proxy = ast.Assign(targets = [node.target], value = node.value)
             ast.copy_location(proxy, node)
             self.visit_Assign(proxy)
 
@@ -898,14 +898,14 @@ class _Python(ast.NodeVisitor):
             self.warning("dynamic_file_path", "File IO path is not a supported static literal; no resource was guessed.", call)
             return
         for kind in kinds:
-            self.a.io(self.rel, value, kind, self.ev(call), cwd=self.cwd)
+            self.a.io(self.rel, value, kind, self.ev(call), cwd = self.cwd)
 
     def visit_Call(self, node: ast.Call) -> None:
         canonical, dotted = self.canonical(node.func), self.dotted(node.func)
         matches = [(prefix, target) for prefix, target in self.local_imports.items()
                    if dotted == prefix or dotted.startswith(prefix + ".")]
         if matches:
-            prefix, reference = max(matches, key=lambda item: len(item[0]))
+            prefix, reference = max(matches, key = lambda item: len(item[0]))
             target = reference.source_path
             member = ".".join(filter(None, [reference.symbol, dotted[len(prefix):].lstrip(".")]))
             if dotted in self.mutated_attributes:
@@ -915,7 +915,7 @@ class _Python(ast.NodeVisitor):
                 note = ("Direct reference to a locally defined callable; runtime reachability is not asserted."
                         if confirmed else "Call through a local import; re-exports, decorators and dynamic attributes are not resolved.")
                 self.a.edge(self.a.script_ids[self.rel], self.a.script_ids[target], "calls", self.ev(node, note),
-                            status="confirmed" if confirmed else "proposed", condition="; ".join(self.conditions) or None)
+                            status = "confirmed" if confirmed else "proposed", condition = "; ".join(self.conditions) or None)
                 if not confirmed:
                     self.warning("imported_callable_unresolved", f"Callable {dotted!r} is not directly defined in {target}; its module-level relationship is proposed for review.", node)
         path_receiver = self.literal(node.func.value) if isinstance(node.func, ast.Attribute) else _UNKNOWN
@@ -959,7 +959,7 @@ class _Python(ast.NodeVisitor):
         elif canonical in {"pandas.read_sql", "pandas.read_sql_query"}:
             sql = self.arg(node, 0, "sql")
             if isinstance(sql, str):
-                _sql(self.a, self.rel, sql, line_offset=node.lineno - 1)
+                _sql(self.a, self.rel, sql, line_offset = node.lineno - 1)
             else:
                 self.warning("dynamic_sql", "SQL text is not a static literal; no tables were guessed.", node)
         elif canonical == "pandas.read_sql_table" or method == "to_sql":
@@ -1025,13 +1025,13 @@ def _sql(analysis: _Analysis, rel: str, source: str, *, line_offset: int = 0, ow
         from sqlglot import exp
         from sqlglot.optimizer.scope import Scope, traverse_scope
     except ImportError:
-        analysis.issue("sql_parser_unavailable", "Install sqlglot to analyze SQL. Source is retained without guessed dependencies.", rel, severity="error")
+        analysis.issue("sql_parser_unavailable", "Install sqlglot to analyze SQL. Source is retained without guessed dependencies.", rel, severity = "error")
         analysis.sources[rel].status = "failed"
         return
     try:
-        statements = sqlglot.parse(source, read=analysis.dialect, error_level=sqlglot.ErrorLevel.RAISE)
+        statements = sqlglot.parse(source, read = analysis.dialect, error_level = sqlglot.ErrorLevel.RAISE)
     except Exception as exc:
-        evidence = analysis.evidence(rel, "sqlglot", line=line_offset + 1)
+        evidence = analysis.evidence(rel, "sqlglot", line = line_offset + 1)
         analysis.issue("sql_parse_error", f"SQL parsing failed: {type(exc).__name__}: {str(exc)[:700]}", rel, evidence, "error")
         if line_offset == 0 and analysis.sources[rel].script_type == "sql":
             analysis.sources[rel].status = "failed"
@@ -1041,7 +1041,7 @@ def _sql(analysis: _Analysis, rel: str, source: str, *, line_offset: int = 0, ow
     for statement in statements:
         if statement is None:
             continue
-        evidence = analysis.evidence(rel, "sqlglot", line=line_offset + 1)
+        evidence = analysis.evidence(rel, "sqlglot", line = line_offset + 1)
         if isinstance(statement, (exp.Use, exp.Set)):
             context += "\n" + statement.sql()
             analysis.issue("sql_session_context", "SQL changes database/session context. Subsequent table identities retain this context and require review.", rel, evidence)
@@ -1109,7 +1109,7 @@ def _sql(analysis: _Analysis, rel: str, source: str, *, line_offset: int = 0, ow
             if id(table) in excluded:
                 continue
             if table.find_ancestor(exp.Reference):
-                analysis.issue("sql_schema_reference", "A schema/foreign-key reference is not represented as a data-read relationship.", rel, evidence, severity="info")
+                analysis.issue("sql_schema_reference", "A schema/foreign-key reference is not represented as a data-read relationship.", rel, evidence, severity = "info")
                 continue
             if not table.name or not isinstance(table.this, exp.Identifier):
                 analysis.issue("dynamic_sql_table", "Table-valued function or dynamic table expression requires review.", rel, evidence)
@@ -1120,8 +1120,8 @@ def _sql(analysis: _Analysis, rel: str, source: str, *, line_offset: int = 0, ow
                 continue
             line = table.this.meta.get("line", 1) + line_offset
             session_local = bool(table.this.args.get("temporary")) or _json([part.name for part in table.parts]) in temporary_tables
-            table_evidence = analysis.evidence(rel, "sqlglot", line=line,
-                note="Parsed table reference; CTE and local aliases are excluded. SQL parsing does not validate runtime execution.")
+            table_evidence = analysis.evidence(rel, "sqlglot", line = line,
+                note = "Parsed table reference; CTE and local aliases are excluded. SQL parsing does not validate runtime execution.")
             if id(table) in writes:
                 analysis.table_io(rel, parts, "writes", table_evidence, owner, context, session_local)
             if id(table) not in writes or id(table) in reads_too:
@@ -1134,14 +1134,14 @@ def _batch(analysis: _Analysis, rel: str, source: str) -> None:
         line = raw.strip().lstrip("@")
         if not line or line.lower().startswith(("rem ", "::", "echo ")) or line.startswith(":"):
             continue
-        evidence = analysis.evidence(rel, "batch_literals", line=lineno)
+        evidence = analysis.evidence(rel, "batch_literals", line = lineno)
         if line.endswith("^") or re.match(r"(?i)^(?:if|for|goto)\b", line):
             if re.search(r"(?i)\b(?:cd|chdir|pushd|popd)\b", line):
                 cwd = None
             analysis.issue("batch_control_flow_unresolved", "Batch conditional, loop, jump or continuation requires manual review; no execution order was inferred.", rel, evidence)
             continue
         if re.match(r"(?i)^(?:set|setlocal|endlocal)\b", line):
-            analysis.issue("batch_environment_unresolved", "Batch environment mutations are not evaluated; variable-based dependencies require review.", rel, evidence, severity="info")
+            analysis.issue("batch_environment_unresolved", "Batch environment mutations are not evaluated; variable-based dependencies require review.", rel, evidence, severity = "info")
             continue
         line = re.sub(r"(?i)%~dp0", lambda _: (analysis.root / rel).parent.as_posix() + "/", line)
         if re.search(r"%[^%]*%|%[0-9*]|![^!]+!", line):
@@ -1150,7 +1150,7 @@ def _batch(analysis: _Analysis, rel: str, source: str) -> None:
             analysis.issue("dynamic_batch_variable", "Batch launch contains unresolved variables or arguments.", rel, evidence)
             continue
         try:
-            lexer = shlex.shlex(line, posix=False, punctuation_chars="&|<>")
+            lexer = shlex.shlex(line, posix = False, punctuation_chars = "&|<>")
             lexer.whitespace_split, lexer.commenters = True, ""
             tokens = [token[1:-1] if len(token) >= 2 and token[0] == token[-1] == '"' else token for token in lexer]
             # Batch always treats backslashes as separators, even when analyzed
@@ -1171,7 +1171,7 @@ def _batch(analysis: _Analysis, rel: str, source: str) -> None:
                 analysis.issue("batch_cwd_unresolved", "Batch working-directory change cannot be resolved statically.", rel, evidence)
             continue
         if tokens and tokens[0].lower() == "call" and len(tokens) > 1 and tokens[1].startswith(":"):
-            analysis.issue("batch_subroutine_unresolved", "Internal batch subroutine control flow is not represented by the project dependency graph.", rel, evidence, severity="info")
+            analysis.issue("batch_subroutine_unresolved", "Internal batch subroutine control flow is not represented by the project dependency graph.", rel, evidence, severity = "info")
             continue
         analysis.command(rel, tokens, evidence, cwd)
         if tokens and tokens[0].lower() == "call":
@@ -1182,10 +1182,10 @@ def _batch(analysis: _Analysis, rel: str, source: str) -> None:
 def _alteryx(analysis: _Analysis, rel: str, source: str) -> None:
     try:
         from defusedxml import ElementTree
-        root = ElementTree.fromstring(source, forbid_dtd=True, forbid_entities=True, forbid_external=True)
+        root = ElementTree.fromstring(source, forbid_dtd = True, forbid_entities = True, forbid_external = True)
     except Exception as exc:
         analysis.sources[rel].status = "failed"
-        analysis.issue("alteryx_parse_error", f"Alteryx XML was not safely parseable: {type(exc).__name__}: {str(exc)[:500]}", rel, severity="error")
+        analysis.issue("alteryx_parse_error", f"Alteryx XML was not safely parseable: {type(exc).__name__}: {str(exc)[:500]}", rel, severity = "error")
         return
 
     def tag(element: Any) -> str:
@@ -1194,11 +1194,11 @@ def _alteryx(analysis: _Analysis, rel: str, source: str) -> None:
     elements = [element for element in root.iter() if tag(element) == "Node" and "ToolID" in element.attrib]
     if len(elements) > MAX_XML_TOOLS:
         analysis.sources[rel].status = "failed"
-        analysis.issue("alteryx_tool_limit", "Alteryx file exceeds the supported tool-count limit; tool graph was skipped.", rel, severity="error")
+        analysis.issue("alteryx_tool_limit", "Alteryx file exceeds the supported tool-count limit; tool graph was skipped.", rel, severity = "error")
         return
     counts = Counter(element.attrib["ToolID"] for element in elements)
     tool_ids: dict[str, str] = {}
-    evidence = analysis.evidence(rel, "alteryx_xml", note="Explicit XML tool configuration/connection; source line is unavailable from the safe XML parser.")
+    evidence = analysis.evidence(rel, "alteryx_xml", note = "Explicit XML tool configuration/connection; source line is unavailable from the safe XML parser.")
     for element in elements:
         tool_id = element.attrib["ToolID"]
         if counts[tool_id] > 1:
@@ -1209,9 +1209,9 @@ def _alteryx(analysis: _Analysis, rel: str, source: str) -> None:
         gui = next((child for child in element if tag(child) == "GuiSettings"), None)
         plugin = gui.attrib.get("Plugin", "") if gui is not None else ""
         annotation = next((child.text for child in element.iter() if tag(child) == "AnnotationText" and child.text), "")
-        analysis.nodes[node_id] = GraphNode(id=node_id, kind="process", source_path=rel,
-            label=(annotation or plugin.rsplit(".", 1)[-1] or f"Tool {tool_id}")[:1000],
-            details={"parent_script_id": analysis.script_ids[rel], "tool_id": tool_id, "plugin": plugin})
+        analysis.nodes[node_id] = GraphNode(id = node_id, kind = "process", source_path = rel,
+            label = (annotation or plugin.rsplit(".", 1)[-1] or f"Tool {tool_id}")[:1000],
+            details = {"parent_script_id": analysis.script_ids[rel], "tool_id": tool_id, "plugin": plugin})
         lowered = plugin.casefold()
         direction = "reads" if "dbfileinput" in lowered else "writes" if "dbfileoutput" in lowered else None
         if direction:
@@ -1219,7 +1219,7 @@ def _alteryx(analysis: _Analysis, rel: str, source: str) -> None:
                 value = file.text.strip()
                 if re.match(r"(?i)^(?:odbc:|odb:|oledb:|oci:|db:)", value):
                     analysis.issue("alteryx_database_connection", "Alteryx database connection requires explicit namespace/driver review; connection credentials are not copied into resource labels.", rel,
-                                   evidence.model_copy(update={"excerpt": ""}))
+                                   evidence.model_copy(update = {"excerpt": ""}))
                     continue
                 value = re.sub(r"(?i)%Engine.WorkflowDirectory%", lambda _: (analysis.root / rel).parent.as_posix(), value)
                 if re.search(r"%[^%]+%", value):
@@ -1230,11 +1230,11 @@ def _alteryx(analysis: _Analysis, rel: str, source: str) -> None:
                 if not ntpath.splitdrive(path)[0]:
                     path = path.replace("\\", "/")
                 if path:
-                    analysis.io(rel, path, direction, evidence, owner=node_id)
+                    analysis.io(rel, path, direction, evidence, owner = node_id)
         for engine in (child for child in element if tag(child) == "EngineSettings"):
             macro = engine.attrib.get("Macro")
             if macro:
-                analysis.launch(rel, macro, evidence, owner=node_id)
+                analysis.launch(rel, macro, evidence, owner = node_id)
         if any(name in lowered for name in ("python", "rtool", "runcommand", "dynamicinput", "dynamicoutput")):
             analysis.issue("alteryx_dynamic_tool", f"Tool {tool_id} can introduce dependencies beyond explicit XML wiring; review its configuration.", rel, evidence)
     for connection in (element for element in root.iter() if tag(element) == "Connection"):
@@ -1247,7 +1247,7 @@ def _alteryx(analysis: _Analysis, rel: str, source: str) -> None:
             analysis.issue("dangling_alteryx_connection", "XML connection refers to a missing or ambiguous ToolID; it was omitted.", rel, evidence)
             continue
         ports = f"{origin.attrib.get('Connection', '')} → {destination.attrib.get('Connection', '')}"
-        analysis.edge(source_id, target_id, "control_flow", evidence, condition=ports)
+        analysis.edge(source_id, target_id, "control_flow", evidence, condition = ports)
 
 
 def analyze_project(script_folder: str | Path, *, working_directory: str | None = None,
@@ -1280,7 +1280,7 @@ def analyze_project(script_folder: str | Path, *, working_directory: str | None 
             continue
         try:
             if source.script_type == "python":
-                tree = ast.parse(text, filename=rel)
+                tree = ast.parse(text, filename = rel)
                 if sum(1 for _ in ast.walk(tree)) > MAX_AST_NODES:
                     raise ValueError("Python AST exceeds the supported analysis-size limit")
                 _Python(analysis, rel, tree).visit(tree)
@@ -1292,7 +1292,7 @@ def analyze_project(script_folder: str | Path, *, working_directory: str | None 
                 _alteryx(analysis, rel, text)
         except Exception as exc:
             source.status = "failed"
-            evidence = analysis.evidence(rel, f"{source.script_type}_parser", line=getattr(exc, "lineno", None))
+            evidence = analysis.evidence(rel, f"{source.script_type}_parser", line = getattr(exc, "lineno", None))
             analysis.issue("source_analysis_failed", f"Could not fully analyze {rel}: {type(exc).__name__}: {str(exc)[:700]}", rel, evidence, "error")
         analysis.nodes[analysis.script_ids[rel]].details["analysis_status"] = source.status
     return analysis.finish(), analysis.snapshots

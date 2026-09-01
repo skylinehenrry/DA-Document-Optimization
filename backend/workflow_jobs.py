@@ -57,11 +57,11 @@ class JobRequest(StrictModel):
     """
 
     kind: JobKind
-    draft_id: str | None = Field(default=None, pattern=IDENTIFIER)
+    draft_id: str | None = Field(default = None, pattern = IDENTIFIER)
     payload: dict[str, Any]
     request_id: UUID
 
-    @model_validator(mode="after")
+    @model_validator(mode = "after")
     def validate_action(self):
         if self.kind == "analyze" and self.draft_id is not None:
             raise ValueError("Analysis creates a new draft; omit draft_id.")
@@ -70,11 +70,13 @@ class JobRequest(StrictModel):
         request = REQUEST_MODELS[self.kind].model_validate(self.payload)
         # Keep omitted settings omitted. In particular, a saved Ollama choice
         # must not become the schema's default cloud provider during recovery.
-        self.payload = request.model_dump(mode="json", exclude_unset=True)
+        self.payload = request.model_dump(mode = "json", exclude_unset = True)
         return self
 
 
 class RetryRequest(StrictModel):
+    """Require the original request identity before cloning interrupted work."""
+
     request_id: UUID
 
 
@@ -282,9 +284,9 @@ class JobRepository:
     def retry(self, job_id: str, request_id: UUID) -> dict:
         with self.store.connection() as db:
             previous = self._row(db, job_id)
-            request = JobRequest(kind=previous["kind"], draft_id=previous["target_draft_id"],
-                                 payload=json.loads(previous["payload_json"]), request_id=request_id)
-        return self.enqueue(request, retry_of=job_id)
+            request = JobRequest(kind = previous["kind"], draft_id = previous["target_draft_id"],
+                                 payload = json.loads(previous["payload_json"]), request_id = request_id)
+        return self.enqueue(request, retry_of = job_id)
 
     def get(self, job_id: str) -> dict:
         with self.store.connection() as db:
@@ -299,7 +301,7 @@ class JobRepository:
             # progress. New jobs store this small result beside the full record.
             rows = db.execute("SELECT " + self._public_columns(summary) +
                               " FROM jobs ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)).fetchall()
-            return [self._public(db, row, summary=summary) for row in rows]
+            return [self._public(db, row, summary = summary) for row in rows]
 
     def busy(self) -> bool:
         with self.store.connection() as db:
@@ -394,7 +396,7 @@ class WorkflowJobs:
 
     async def start(self) -> None:
         if self.task is None:
-            self.task = asyncio.create_task(self._run(), name="workflow-job-worker")
+            self.task = asyncio.create_task(self._run(), name = "workflow-job-worker")
             # Let the first lock attempt happen without delaying startup for an
             # entire analysis. Subsequent HTTP requests remain independent.
             await asyncio.sleep(0)
@@ -416,7 +418,7 @@ class WorkflowJobs:
         if receipt is None:
             return None
         graph = self.service.store.load(receipt["draft_id"], receipt["revision"])
-        return self.service.describe(graph, generation_id=receipt["generation_id"])
+        return self.service.describe(graph, generation_id = receipt["generation_id"])
 
     async def _recover(self) -> None:
         """
@@ -428,9 +430,9 @@ class WorkflowJobs:
         for job_id in await complete_in_thread(self.repository.orphaned):
             result = await complete_in_thread(self._saved_result, job_id)
             if result is not None:
-                await complete_in_thread(self.repository.finish, job_id, "succeeded", result=result)
+                await complete_in_thread(self.repository.finish, job_id, "succeeded", result = result)
             else:
-                await complete_in_thread(self.repository.finish, job_id, "interrupted", error={
+                await complete_in_thread(self.repository.finish, job_id, "interrupted", error = {
                     "code": "backend_interrupted", "status_code": 409,
                     "message": "The backend stopped before this job finished. Saved drafts are unchanged. Review the job, then retry explicitly; an interrupted model request may already have incurred a charge.",
                 })
@@ -444,40 +446,40 @@ class WorkflowJobs:
             try:
                 self.repository.append_log(job["id"], self.instance_id, message)
             except Exception:
-                log.warning("Could not save progress for %s", job["id"], exc_info=True)
+                log.warning("Could not save progress for %s", job["id"], exc_info = True)
 
         existing = await complete_in_thread(self._saved_result, job["id"])
         if existing is not None:
             return existing
         draft_id, operation_id = job["target_draft_id"], job["id"]
         if job["kind"] == "analyze":
-            graph = await self.service.analyze(request, progress, operation_id=operation_id)
+            graph = await self.service.analyze(request, progress, operation_id = operation_id)
         elif job["kind"] == "generate":
-            manifest = await self.service.generate(draft_id, request, progress, operation_id=operation_id)
+            manifest = await self.service.generate(draft_id, request, progress, operation_id = operation_id)
             graph = await complete_in_thread(self.service.store.load, draft_id, request.expected_revision)
-            return await complete_in_thread(self.service.describe, graph, generation_id=manifest["generation_id"])
+            return await complete_in_thread(self.service.describe, graph, generation_id = manifest["generation_id"])
         elif job["kind"] == "suggest":
-            graph = await self.service.suggest(draft_id, request, progress, operation_id=operation_id)
+            graph = await self.service.suggest(draft_id, request, progress, operation_id = operation_id)
         elif job["kind"] == "import":
-            graph = await complete_in_thread(self.service.import_diagram, draft_id, request, operation_id=operation_id)
+            graph = await complete_in_thread(self.service.import_diagram, draft_id, request, operation_id = operation_id)
         else:
-            graph = await complete_in_thread(self.service.edit, draft_id, request, operation_id=operation_id)
+            graph = await complete_in_thread(self.service.edit, draft_id, request, operation_id = operation_id)
         return await complete_in_thread(self.service.describe, graph)
 
     async def _run_one(self, job: dict) -> None:
         self.current_job_id = job["id"]
         try:
             result = await self._execute(job)
-            await complete_in_thread(self.repository.finish, job["id"], "succeeded", result=result,
-                                     worker_id=self.instance_id)
+            await complete_in_thread(self.repository.finish, job["id"], "succeeded", result = result,
+                                     worker_id = self.instance_id)
         except asyncio.CancelledError:
             result = await complete_in_thread(self._saved_result, job["id"])
             if result is not None:
-                await complete_in_thread(self.repository.finish, job["id"], "succeeded", result=result,
-                                         worker_id=self.instance_id)
+                await complete_in_thread(self.repository.finish, job["id"], "succeeded", result = result,
+                                         worker_id = self.instance_id)
             else:
-                await complete_in_thread(self.repository.finish, job["id"], "interrupted", worker_id=self.instance_id,
-                                         error={"message": "The backend stopped before this job finished. Review and retry explicitly when it is running again; model requests may already have incurred a charge.",
+                await complete_in_thread(self.repository.finish, job["id"], "interrupted", worker_id = self.instance_id,
+                                         error = {"message": "The backend stopped before this job finished. Review and retry explicitly when it is running again; model requests may already have incurred a charge.",
                                                 "code": "backend_interrupted", "status_code": 409})
             raise
         except Exception as error:
@@ -485,12 +487,12 @@ class WorkflowJobs:
             # Recover that successful receipt before telling the UI to retry.
             result = await complete_in_thread(self._saved_result, job["id"])
             if result is not None:
-                await complete_in_thread(self.repository.finish, job["id"], "succeeded", result=result,
-                                         worker_id=self.instance_id)
+                await complete_in_thread(self.repository.finish, job["id"], "succeeded", result = result,
+                                         worker_id = self.instance_id)
             else:
                 log.warning("Workflow job %s failed: %s", job["id"], error)
-                await complete_in_thread(self.repository.finish, job["id"], "failed", error=job_error(error),
-                                         worker_id=self.instance_id)
+                await complete_in_thread(self.repository.finish, job["id"], "failed", error = job_error(error),
+                                         worker_id = self.instance_id)
         finally:
             self.current_job_id = None
 
@@ -516,7 +518,7 @@ class WorkflowJobs:
                         await self._run_one(job)
                         continue
                     with suppress(asyncio.TimeoutError):
-                        await asyncio.wait_for(self.wake.wait(), timeout=self.poll_seconds)
+                        await asyncio.wait_for(self.wake.wait(), timeout = self.poll_seconds)
                 except asyncio.CancelledError:
                     raise
                 except Exception:
@@ -537,24 +539,24 @@ class WorkflowJobs:
                 self.lock.release()
 
 
-router = APIRouter(prefix="/api/jobs", tags=["Saved operations"])
+router = APIRouter(prefix = "/api/jobs", tags = ["Saved operations"])
 
 
-@router.post("", status_code=202)
+@router.post("", status_code = 202)
 async def submit_job(body: JobRequest, request: Request):
     manager = request.app.state.workflow_jobs
     async with manager.submission_lock:
         if not manager.accepting:
-            raise HTTPException(status_code=503, detail="The backend is stopping. Restart it before submitting another job.")
+            raise HTTPException(status_code = 503, detail = "The backend is stopping. Restart it before submitting another job.")
         job = await complete_in_thread(manager.repository.enqueue, body)
     manager.wake.set()
     return job
 
 
 @router.get("")
-async def list_jobs(request: Request, limit: int = Query(default=100, ge=1, le=1000),
-                    summary: bool = Query(default=False)):
-    return await asyncio.to_thread(request.app.state.workflow_jobs.repository.list, limit, summary=summary)
+async def list_jobs(request: Request, limit: int = Query(default = 100, ge = 1, le = 1000),
+                    summary: bool = Query(default = False)):
+    return await asyncio.to_thread(request.app.state.workflow_jobs.repository.list, limit, summary = summary)
 
 
 @router.get("/{job_id}")
@@ -562,12 +564,12 @@ async def get_job(job_id: str, request: Request):
     return await asyncio.to_thread(request.app.state.workflow_jobs.repository.get, job_id)
 
 
-@router.post("/{job_id}/retry", status_code=202)
+@router.post("/{job_id}/retry", status_code = 202)
 async def retry_job(job_id: str, body: RetryRequest, request: Request):
     manager = request.app.state.workflow_jobs
     async with manager.submission_lock:
         if not manager.accepting:
-            raise HTTPException(status_code=503, detail="The backend is stopping. Restart it before retrying this job.")
+            raise HTTPException(status_code = 503, detail = "The backend is stopping. Restart it before retrying this job.")
         job = await complete_in_thread(manager.repository.retry, job_id, body.request_id)
     manager.wake.set()
     return job

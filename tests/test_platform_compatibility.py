@@ -33,8 +33,8 @@ class PlatformCompatibilityTests(unittest.TestCase):
     def test_windows_folder_picker_uses_explicit_utf8_without_interpolating_paths(self):
         from backend.app import select_folder
         chosen = "C:\\分析プロジェクト\\Monthly & Revenue"
-        with patch("backend.app.platform.system", return_value="Windows"), patch("backend.app.subprocess.run") as run:
-            run.return_value = subprocess.CompletedProcess([], 0, stdout=chosen + "\r\n", stderr="")
+        with patch("backend.app.platform.system", return_value = "Windows"), patch("backend.app.subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, stdout = chosen + "\r\n", stderr = "")
             self.assertEqual(select_folder(Path(chosen)), chosen)
         command = run.call_args.args[0]
         self.assertNotIn(chosen, command[-1])
@@ -45,7 +45,7 @@ class PlatformCompatibilityTests(unittest.TestCase):
     def test_project_download_names_are_safe_on_windows_and_in_http_headers(self):
         for title in ('CON', 'con.report', 'LPT1', 'COM\u00b9', '../../AUX', 'Bad <>:"/\\|?* name. ',
                       'Report\r\nX-Injected: value', '\U0001f4c8' * 1000):
-            with self.subTest(title=title[:50]):
+            with self.subTest(title = title[:50]):
                 filename = flowchart_filename(title)
                 self.assertTrue(filename.endswith(".html"))
                 self.assertLessEqual(len(filename.encode("utf-8")), 200)
@@ -82,9 +82,9 @@ async def main():
 asyncio.run(main())
 """
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run([sys.executable, "-B", "-c", code], cwd=ROOT,
-                                    env={**os.environ, "DA_WORKFLOW_STORE": directory, "DA_WORKFLOW_MANAGED": "1"},
-                                    capture_output=True, text=True, encoding="utf-8", timeout=10)
+            result = subprocess.run([sys.executable, "-B", "-c", code], cwd = ROOT,
+                                    env = {**os.environ, "DA_WORKFLOW_STORE": directory, "DA_WORKFLOW_MANAGED": "1"},
+                                    capture_output = True, text = True, encoding = "utf-8", timeout = 10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("graceful shutdown completed", result.stdout)
 
@@ -98,7 +98,7 @@ asyncio.run(main())
             (PureWindowsPath("C:/"), "C drive"),
         ]
         for source, expected in cases:
-            with self.subTest(source=source):
+            with self.subTest(source = source):
                 self.assertEqual(project_title(source), expected)
                 self.assertEqual(project_title(source, "  \t  "), expected)
                 self.assertEqual(project_title(source, "  Reviewed Finance  "), "Reviewed Finance")
@@ -107,10 +107,10 @@ asyncio.run(main())
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "Monthly Revenue"
             project.mkdir()
-            (project / "script.py").write_text("value = 1\n", encoding="utf-8")
+            (project / "script.py").write_text("value = 1\n", encoding = "utf-8")
             graph, _ = analyze_project(project)
             self.assertEqual(graph.title, "Monthly Revenue")
-            named, _ = analyze_project(project, title="  Reviewed Revenue  ")
+            named, _ = analyze_project(project, title = "  Reviewed Revenue  ")
             self.assertEqual(named.title, "Reviewed Revenue")
             args = parser().parse_args(["analyze", str(project), str(Path(directory) / "reports")])
             self.assertIsNone(args.title)
@@ -119,10 +119,10 @@ asyncio.run(main())
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "Physical source"
             project.mkdir()
-            (project / "script.py").write_text("value = 1\n", encoding="utf-8")
+            (project / "script.py").write_text("value = 1\n", encoding = "utf-8")
             selected = Path(directory) / "Chosen project name"
             try:
-                selected.symlink_to(project, target_is_directory=True)
+                selected.symlink_to(project, target_is_directory = True)
             except OSError as error:
                 self.skipTest(f"This OS account cannot create directory symlinks: {error}")
             graph, _ = analyze_project(selected)
@@ -133,11 +133,11 @@ asyncio.run(main())
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "Project \u540d\u524d \U0001f31f"
             project.mkdir()
-            (project / "script.py").write_text("value = 1\n", encoding="utf-8")
+            (project / "script.py").write_text("value = 1\n", encoding = "utf-8")
             store = Path(directory) / "store"
             data, errors = io.BytesIO(), io.BytesIO()
-            stdout = io.TextIOWrapper(data, encoding="cp1252", errors="strict")
-            stderr = io.TextIOWrapper(errors, encoding="cp1252", errors="strict")
+            stdout = io.TextIOWrapper(data, encoding = "cp1252", errors = "strict")
+            stderr = io.TextIOWrapper(errors, encoding = "cp1252", errors = "strict")
             try:
                 with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
                     code = asyncio.run(cli(["--store", str(store), "analyze", str(project), str(Path(directory) / "reports")]))
@@ -155,13 +155,13 @@ asyncio.run(main())
         real_fsync = os.fsync
         writable_flushes = []
 
-        def windows_text_writer(path, content, *, encoding=None, errors=None, newline=None):
+        def windows_text_writer(path, content, *, encoding = None, errors = None, newline = None):
             # - Simulate Windows' default text translation on any test host.
             # - An explicit LF newline option must preserve the bytes hashed by
             #   generation manifests, including non-ASCII labels and summaries.
             if newline is None:
                 content = content.replace("\n", "\r\n")
-            return real_write(path, content, encoding=encoding, errors=errors, newline="\n")
+            return real_write(path, content, encoding = encoding, errors = errors, newline = "\n")
 
         def requires_write_access(descriptor):
             # - A zero-byte write proves the descriptor grants write access,
@@ -187,14 +187,14 @@ class NativeWindowsLauncherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "Project with spaces & ! symbols"
             project.mkdir()
-            venv.EnvBuilder(with_pip=False).create(project / ".venv")
+            venv.EnvBuilder(with_pip = False).create(project / ".venv")
             wrapper = project / "Launch DA Document Generator.bat"
             shutil.copyfile(ROOT / wrapper.name, wrapper)
             (project / "launch.py").write_text(
                 "import json, os, sys\nfrom pathlib import Path\n"
                 "Path(os.environ['DA_TEST_LAUNCH_MARKER']).write_text(json.dumps({"
                 "'interpreter': sys.executable, 'script': str(Path(__file__).resolve()), 'arguments': sys.argv[1:]"
-                "}), encoding='utf-8')\n", encoding="utf-8",
+                "}), encoding='utf-8')\n", encoding = "utf-8",
             )
             marker = Path(directory) / "launched.json"
             command_processor = os.environ.get("COMSPEC", "cmd.exe")
@@ -203,12 +203,12 @@ class NativeWindowsLauncherTests(unittest.TestCase):
             #   wrapper protect the exclamation mark in its own expanded path.
             for delayed, command_path, cwd in (("off", str(wrapper), Path(directory)),
                                                 ("on", wrapper.name, project)):
-                with self.subTest(delayed_expansion=delayed):
+                with self.subTest(delayed_expansion = delayed):
                     command = f'"{command_processor}" /d /v:{delayed} /s /c ""{command_path}" --status"'
-                    result = subprocess.run(command, cwd=cwd, env={**os.environ, "DA_TEST_LAUNCH_MARKER": str(marker)},
-                                            stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
-                    self.assertEqual(result.returncode, 0, (result.stdout + result.stderr).decode(errors="replace"))
-                    recorded = json.loads(marker.read_text(encoding="utf-8"))
+                    result = subprocess.run(command, cwd = cwd, env = {**os.environ, "DA_TEST_LAUNCH_MARKER": str(marker)},
+                                            stdin = subprocess.DEVNULL, capture_output = True, timeout = 30)
+                    self.assertEqual(result.returncode, 0, (result.stdout + result.stderr).decode(errors = "replace"))
+                    recorded = json.loads(marker.read_text(encoding = "utf-8"))
                     self.assertEqual(Path(recorded["interpreter"]).parent, project / ".venv" / "Scripts")
                     self.assertEqual(Path(recorded["script"]), project / "launch.py")
                     self.assertEqual(recorded["arguments"], ["--status"])

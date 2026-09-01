@@ -108,6 +108,14 @@ export function validateConnection(graph, candidate, exceptId = null) {
 }
 
 export class GraphSession {
+  /*
+  Keep one reversible local editing session tied to an immutable server revision.
+
+  - Undo and redo store editable topology only; source evidence stays on the base.
+  - Recovery data includes revision and source digest before it may be restored.
+  - A mismatch remains a visible conflict instead of overwriting newer server work.
+  - The submitted request ID links unsaved local state to a durable save job.
+  */
   constructor(base, saved = null) {
     this.base = clone(base);
     this.graph = clone(base);

@@ -34,18 +34,25 @@ from .static_analysis import analyze_project
 from .workflow_store import RevisionConflict, WorkflowStore, json_text
 
 
+# Public workflow request contracts.
+# - The browser, direct API, background jobs, and command line all validate through
+#   these same models so no entry point can bypass limits or revision requirements.
+# - Provider settings are optional workflow preferences; source and output locations
+#   are explicit local paths and are never converted into browser URLs.
 class AnalysisRequest(StrictModel):
-    script_folder: str = Field(min_length=1)
-    da_document_folder: str = Field(min_length=1)
-    title: str | None = Field(default=None, max_length=1000)
+    """Inputs for offline extraction and creation of revision one."""
+
+    script_folder: str = Field(min_length = 1)
+    da_document_folder: str = Field(min_length = 1)
+    title: str | None = Field(default = None, max_length = 1000)
     working_directory: str | None = None
     sql_dialect: str | None = None
     database_namespace: str | None = None
     model: ModelProvider = "OpenAI"
-    language: str = Field(default="English", min_length=1, max_length=100)
-    max_concurrency: int = Field(default=3, ge=1, le=16)
+    language: str = Field(default = "English", min_length = 1, max_length = 100)
+    max_concurrency: int = Field(default = 3, ge = 1, le = 16)
 
-    @field_validator("title", mode="before")
+    @field_validator("title", mode = "before")
     @classmethod
     def optional_project_name(cls, value):
         # - Keep project naming optional in the browser, API and command line.
@@ -55,29 +62,37 @@ class AnalysisRequest(StrictModel):
 
 
 class GenerateRequest(StrictModel):
-    expected_revision: int = Field(ge=1)
+    """Options for rendering one exact reviewed revision into final artifacts."""
+
+    expected_revision: int = Field(ge = 1)
     use_llm: bool = False
     model: ModelProvider = "OpenAI"
-    language: str = Field(default="English", min_length=1, max_length=100)
-    max_concurrency: int = Field(default=3, ge=1, le=16)
-    timeout_seconds: float = Field(default=90, gt=0, le=300)
+    language: str = Field(default = "English", min_length = 1, max_length = 100)
+    max_concurrency: int = Field(default = 3, ge = 1, le = 16)
+    timeout_seconds: float = Field(default = 90, gt = 0, le = 300)
     allow_proposed: bool = False
     acknowledge_incomplete: bool = False
 
 
 class ImportRequest(StrictModel):
-    expected_revision: int = Field(ge=1)
-    xml: str = Field(min_length=1, max_length=10_000_000)
+    """One complete draw.io document replacing an expected graph revision."""
+
+    expected_revision: int = Field(ge = 1)
+    xml: str = Field(min_length = 1, max_length = 10_000_000)
 
 
 class SuggestRequest(StrictModel):
-    expected_revision: int = Field(ge=1)
+    """Bounded provider options for explicit review-only relationship proposals."""
+
+    expected_revision: int = Field(ge = 1)
     model: ModelProvider = "OpenAI"
-    max_concurrency: int = Field(default=3, ge=1, le=16)
-    timeout_seconds: float = Field(default=90, gt=0, le=300)
+    max_concurrency: int = Field(default = 3, ge = 1, le = 16)
+    timeout_seconds: float = Field(default = 90, gt = 0, le = 300)
 
 
 class ReviewRequired(ValueError):
+    """Generation is blocked until the recorded analysis limitations are accepted."""
+
     pass
 
 
@@ -114,6 +129,13 @@ def saved_model_options(request, settings: dict):
 
 
 def review_report(graph: GraphDocument) -> dict:
+    """Build the complete review summary without modifying the saved graph.
+
+    - Count source coverage, provenance, proposal state, and user corrections.
+    - Retain detailed issues and the grouped, plain-language diagnostics view.
+    - State the direction legend and project-dependency scope explicitly.
+    """
+
     source_paths = {source.path for source in graph.sources}
     represented = {node.source_path for node in graph.nodes if node.kind == "script" and node.source_path}
     return {
@@ -143,8 +165,8 @@ def _write_directory(destination: Path, files: dict[str, str]) -> None:
     - Never overwrite a previously published revision or generation directory.
     - An interrupted temporary directory is private and is never served by HTTP.
     """
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=".pending-", dir=destination.parent))
+    destination.parent.mkdir(parents = True, exist_ok = True)
+    temporary = Path(tempfile.mkdtemp(prefix = ".pending-", dir = destination.parent))
     try:
         for name, text in files.items():
             # - Manifest hashes describe UTF-8 text with LF line endings. Windows
@@ -152,7 +174,7 @@ def _write_directory(destination: Path, files: dict[str, str]) -> None:
             #   integrity check even though the renderer returned correct text.
             # - Flush with a writable handle; Windows requires write access for
             #   FlushFileBuffers/_commit, unlike a permissive POSIX read handle.
-            (temporary / name).write_text(text, encoding="utf-8", newline="\n")
+            (temporary / name).write_text(text, encoding = "utf-8", newline = "\n")
             with (temporary / name).open("r+b") as written:
                 os.fsync(written.fileno())
         if destination.exists():
@@ -164,6 +186,15 @@ def _write_directory(destination: Path, files: dict[str, str]) -> None:
 
 
 class WorkflowService:
+    """Coordinate every state-changing step around one authoritative store.
+
+    - Analysis creates revision one from offline extractor output and snapshots.
+    - Edits, imports, and suggestions create checked revisions before exports.
+    - Generation enriches prose only, verifies topology, publishes complete files,
+      and registers their hashes against one exact revision.
+    - Disposable export failures never roll back a graph that already committed.
+    """
+
     def __init__(self, store: WorkflowStore):
         self.store = store
         self._export_warnings: dict[tuple[str, int], str] = {}
@@ -177,7 +208,7 @@ class WorkflowService:
     def save_draft_exports(self, graph: GraphDocument) -> dict[str, Path]:
         destination = self.store.artifact_root(graph.id) / "revisions" / str(graph.revision)
         try:
-            files = {"draft.json": graph.model_dump_json(indent=2), "draft.drawio": export_drawio(graph),
+            files = {"draft.json": graph.model_dump_json(indent = 2), "draft.drawio": export_drawio(graph),
                      "draft.svg": render_graph_svg(graph), "review.json": json_text(review_report(graph))}
             if not destination.exists():
                 _write_directory(destination, files)
@@ -198,12 +229,12 @@ class WorkflowService:
         log(f"Script folder received: {request.script_folder}")
         log(f"DA Document folder received: {request.da_document_folder}")
         output_folder = Path(request.da_document_folder).expanduser().resolve()
-        output_folder.mkdir(parents=True, exist_ok=True)
+        output_folder.mkdir(parents = True, exist_ok = True)
         log("Extracting imports, calls and data references using static parsers; no source is executed.")
         graph, snapshots = await complete_in_thread(
-            analyze_project, request.script_folder, working_directory=request.working_directory,
-            sql_dialect=request.sql_dialect, database_namespace=request.database_namespace,
-            title=request.title, logger=log,
+            analyze_project, request.script_folder, working_directory = request.working_directory,
+            sql_dialect = request.sql_dialect, database_namespace = request.database_namespace,
+            title = request.title, logger = log,
         )
         if not graph.sources and not any(node.kind == "script" for node in graph.nodes):
             raise ValueError("No supported source files were found. Choose a project containing Python (.py), SQL (.sql), BAT (.bat) or Alteryx (.yxmd, .yxwz, .yxmc) files.")
@@ -215,8 +246,8 @@ class WorkflowService:
             if node.position is None:
                 node.position = positions[node.id]
         graph = GraphDocument.model_validate(graph.model_dump())
-        settings = request.model_dump(exclude={"script_folder", "da_document_folder", "title"})
-        await complete_in_thread(self.store.create, graph, snapshots, output_folder, settings, operation_id=operation_id)
+        settings = request.model_dump(exclude = {"script_folder", "da_document_folder", "title"})
+        await complete_in_thread(self.store.create, graph, snapshots, output_folder, settings, operation_id = operation_id)
         log("Dependency profile extraction complete. Validated graph saved before summary generation.")
         exports = await complete_in_thread(self.save_draft_exports, graph)
         if not exports:
@@ -227,8 +258,8 @@ class WorkflowService:
     def edit(self, draft_id: str, request: EditRequest, *, operation_id: str | None = None) -> GraphDocument:
         graph = self.store.update(draft_id, request.expected_revision,
                                   lambda current: apply_edits(current, request.operations),
-                                  {"action": "edit", "operations": [operation.model_dump(exclude_unset=True) for operation in request.operations]},
-                                  operation_id=operation_id)
+                                  {"action": "edit", "operations": [operation.model_dump(exclude_unset = True) for operation in request.operations]},
+                                  operation_id = operation_id)
         self.save_draft_exports(graph)
         return graph
 
@@ -236,29 +267,29 @@ class WorkflowService:
         digest = hashlib.sha256(request.xml.encode("utf-8")).hexdigest()
         graph = self.store.update(draft_id, request.expected_revision,
                                   lambda current: import_drawio(current, request.xml),
-                                  {"action": "import_drawio", "diagram_sha256": digest}, operation_id=operation_id)
+                                  {"action": "import_drawio", "diagram_sha256": digest}, operation_id = operation_id)
         self.save_draft_exports(graph)
         return graph
 
-    async def suggest(self, draft_id: str, request: SuggestRequest, logger=None, *, chain=None,
+    async def suggest(self, draft_id: str, request: SuggestRequest, logger = None, *, chain = None,
                       operation_id: str | None = None) -> GraphDocument:
         original = self.require_revision(draft_id, request.expected_revision)
         request = saved_model_options(request, self.store.metadata(draft_id)["settings"])
         proposed = await suggest_relationships(
-            original, self.store.snapshots(draft_id), model=request.model,
-            suppressed=self.store.suppressed_edges(draft_id), max_concurrency=request.max_concurrency,
-            timeout_seconds=request.timeout_seconds, logger=logger, chain=chain,
+            original, self.store.snapshots(draft_id), model = request.model,
+            suppressed = self.store.suppressed_edges(draft_id), max_concurrency = request.max_concurrency,
+            timeout_seconds = request.timeout_seconds, logger = logger, chain = chain,
         )
         graph = await complete_in_thread(
             self.store.update, draft_id, request.expected_revision, lambda current: proposed,
             {"action": "llm_suggestions", "provider": request.model,
-             "added_edge_count": len(proposed.edges) - len(original.edges)}, operation_id=operation_id,
+             "added_edge_count": len(proposed.edges) - len(original.edges)}, operation_id = operation_id,
         )
         await complete_in_thread(self.save_draft_exports, graph)
         return graph
 
-    async def generate(self, draft_id: str, request: GenerateRequest, logger=None, *,
-                       summary_chain=None, provider_identity: dict | None = None,
+    async def generate(self, draft_id: str, request: GenerateRequest, logger = None, *,
+                       summary_chain = None, provider_identity: dict | None = None,
                        operation_id: str | None = None) -> dict:
         log = logger or (lambda message: None)
         graph = self.require_revision(draft_id, request.expected_revision)
@@ -271,9 +302,9 @@ class WorkflowService:
         signature = topology_signature(graph)
         log(f"Generating from reviewed draft {draft_id}, revision {graph.revision}; analysis will not be rerun.")
         records = await enrich_summaries(
-            graph, self.store.snapshots(draft_id), self.store, use_llm=request.use_llm, model=request.model,
-            language=request.language, max_concurrency=request.max_concurrency,
-            timeout_seconds=request.timeout_seconds, logger=log, chain=summary_chain, provider_identity=provider_identity,
+            graph, self.store.snapshots(draft_id), self.store, use_llm = request.use_llm, model = request.model,
+            language = request.language, max_concurrency = request.max_concurrency,
+            timeout_seconds = request.timeout_seconds, logger = log, chain = summary_chain, provider_identity = provider_identity,
         )
         summaries = {node_id: NarrativeSummary.model_validate(record["summary"]) for node_id, record in records.items()}
         statuses = {node_id: record["status"] for node_id, record in records.items()}
@@ -281,8 +312,8 @@ class WorkflowService:
             raise ValueError("Summary enrichment changed graph topology; generation rejected.")
         log("Script summary generation complete. Rendering the reviewed graph.")
         rendered = await complete_in_thread(
-            render_graph_html, graph, summaries=summaries, summary_statuses=statuses,
-            summary_errors={node_id: record["error"] for node_id, record in records.items() if record.get("error")},
+            render_graph_html, graph, summaries = summaries, summary_statuses = statuses,
+            summary_errors = {node_id: record["error"] for node_id, record in records.items() if record.get("error")},
         )
         if topology_signature(graph) != signature:
             raise ValueError("Rendering changed graph topology; generation rejected.")
@@ -290,14 +321,14 @@ class WorkflowService:
         destination = self.store.artifact_root(draft_id) / "generations" / generation_id
         files = {
             "workflow_flowchart.html": rendered,
-            "workflow_graph.json": graph.model_dump_json(indent=2),
+            "workflow_graph.json": graph.model_dump_json(indent = 2),
             "summaries.json": json_text({"draft_id": draft_id, "revision": graph.revision, "source_digest": graph.source_digest, "summaries": records}),
             "review.json": json_text(review),
         }
         manifest = {
             "schema_version": "1.0", "generation_id": generation_id, "draft_id": draft_id,
             "revision": graph.revision, "source_digest": graph.source_digest, "created_at": utc_now(),
-            "output_directory": str(destination), "settings": request.model_dump(exclude={"expected_revision"}),
+            "output_directory": str(destination), "settings": request.model_dump(exclude = {"expected_revision"}),
             "summary_status_counts": dict(Counter(statuses.values())),
             "has_analysis_warnings": review["has_warnings"], "has_analysis_errors": review["has_analysis_errors"],
             "has_proposed_edges": bool(review["proposed_edge_ids"]),
@@ -314,7 +345,7 @@ class WorkflowService:
             # Edits made while the model was running must not publish stale HTML
             # as the latest result. Older successful generations stay accessible.
             await complete_in_thread(self.store.record_generation, draft_id, graph.revision, manifest,
-                                     operation_id=operation_id)
+                                     operation_id = operation_id)
         except BaseException:
             while not writer.done():
                 try:
@@ -410,6 +441,13 @@ class WorkflowService:
 
 
 def default_service() -> WorkflowService:
-    # Keep source snapshots and the database outside all StaticFiles mounts.
+    """Create the local service with private storage outside public file mounts.
+
+    - ``DA_WORKFLOW_STORE`` supports isolated tests and an explicit custom location.
+    - The default remains inside the backend project folder for launcher portability.
+    - Constructing the service opens local SQLite only; it does not analyze sources
+      or initialize a model provider.
+    """
+
     directory = os.environ.get("DA_WORKFLOW_STORE") or Path(__file__).parent / ".workflow_store"
     return WorkflowService(WorkflowStore(directory))

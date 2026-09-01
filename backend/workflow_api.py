@@ -1,10 +1,14 @@
-"""
-Expose saved drafts, reviewed revisions and generation-specific downloads.
+"""Expose saved drafts, reviewed revisions, and generation-specific downloads.
+
 - The browser uses /api/jobs for long operations; direct mutation routes remain
   compatible with existing local API clients and use the same service validation.
 - Read/export routes always identify a draft, and may pin a particular revision.
 - Generated files are looked up in the database and checked before being served.
 - Download links are explicit attachments, while preview links open inline.
+- Route functions contain transport concerns only; analysis, revision checks,
+  persistence, and rendering stay in ``WorkflowService`` and ``WorkflowStore``.
+- Filesystem paths are never returned as browser links, preventing broken local
+  downloads and keeping private source snapshots outside static file mounts.
 """
 
 from contextlib import asynccontextmanager
@@ -20,14 +24,18 @@ from .graph_rendering import render_graph_svg
 from .workflow_service import AnalysisRequest, GenerateRequest, ImportRequest, SuggestRequest, complete_in_thread, review_report
 
 
-router = APIRouter(prefix="/api/drafts", tags=["Reviewed flowcharts"])
+router = APIRouter(prefix = "/api/drafts", tags = ["Reviewed flowcharts"])
 
 
+# Long-running direct routes share the application's activity counter.
+# - The counter prevents a user-requested shutdown while a mutation is active.
+# - ``finally`` releases the counter after success, validation failure, or client
+#   cancellation so a temporary request error cannot strand the server as busy.
 @asynccontextmanager
 async def activity(request: Request):
     manager = getattr(request.app.state, "workflow_jobs", None)
     if request.app.state.stopping or (manager is not None and not manager.accepting):
-        raise HTTPException(status_code=503, detail="The backend is stopping. Restart it before continuing.")
+        raise HTTPException(status_code = 503, detail = "The backend is stopping. Restart it before continuing.")
     request.app.state.active_workflow_jobs += 1
     try:
         yield request.app.state.workflow_service
@@ -39,8 +47,12 @@ def logger(request: Request):
     return getattr(request.app.state, "workflow_logger", None)
 
 
+# Saved graph and review routes.
+# - Reads may pin an immutable revision for comparison or export.
+# - Mutations all pass through the same service boundary and optimistic revision
+#   checks used by durable background jobs.
 @router.get("")
-async def list_drafts(request: Request, output_folder: str | None = None, limit: int = Query(default=100, ge=1, le=1000)):
+async def list_drafts(request: Request, output_folder: str | None = None, limit: int = Query(default = 100, ge = 1, le = 1000)):
     return await asyncio.to_thread(request.app.state.workflow_service.store.list_drafts, output_folder, limit)
 
 
@@ -49,7 +61,7 @@ async def graph_schema():
     return GraphDocument.model_json_schema()
 
 
-@router.post("", status_code=201)
+@router.post("", status_code = 201)
 async def analyze(body: AnalysisRequest, request: Request):
     async with activity(request) as service:
         graph = await service.analyze(body, logger(request))
@@ -57,7 +69,7 @@ async def analyze(body: AnalysisRequest, request: Request):
 
 
 @router.get("/{draft_id}")
-async def get_draft(draft_id: str, request: Request, revision: int | None = Query(default=None, ge=1)):
+async def get_draft(draft_id: str, request: Request, revision: int | None = Query(default = None, ge = 1)):
     service = request.app.state.workflow_service
     graph = await asyncio.to_thread(service.store.load, draft_id, revision)
     return await asyncio.to_thread(service.describe, graph)
@@ -69,7 +81,7 @@ async def history(draft_id: str, request: Request):
 
 
 @router.get("/{draft_id}/review")
-async def review(draft_id: str, request: Request, revision: int | None = Query(default=None, ge=1)):
+async def review(draft_id: str, request: Request, revision: int | None = Query(default = None, ge = 1)):
     graph = await asyncio.to_thread(request.app.state.workflow_service.store.load, draft_id, revision)
     return await asyncio.to_thread(review_report, graph)
 
@@ -100,36 +112,41 @@ async def generate(draft_id: str, body: GenerateRequest, request: Request):
     async with activity(request) as service:
         manifest = await service.generate(draft_id, body, logger(request))
         graph = await asyncio.to_thread(service.store.load, draft_id, body.expected_revision)
-        result = await asyncio.to_thread(service.describe, graph, generation_id=manifest["generation_id"])
+        result = await asyncio.to_thread(service.describe, graph, generation_id = manifest["generation_id"])
         result["generation"] = manifest
         return result
 
 
+# Export and artifact routes.
+# - Draft exports are disposable projections of a selected graph revision.
+# - Generated artifacts are database-owned records with checked content hashes.
+# - ``Content-Disposition`` controls preview versus download without disclosing a
+#   server filesystem path to the browser.
 @router.get("/{draft_id}/export/{file_name}")
-async def export(draft_id: str, file_name: str, request: Request, revision: int | None = Query(default=None, ge=1)):
+async def export(draft_id: str, file_name: str, request: Request, revision: int | None = Query(default = None, ge = 1)):
     graph = await asyncio.to_thread(request.app.state.workflow_service.store.load, draft_id, revision)
     if file_name == "draft.drawio":
         content, media_type = await asyncio.to_thread(export_drawio, graph), "application/xml"
     elif file_name == "draft.svg":
         content, media_type = await asyncio.to_thread(render_graph_svg, graph), "image/svg+xml"
     elif file_name == "draft.json":
-        content, media_type = graph.model_dump_json(indent=2), "application/json"
+        content, media_type = graph.model_dump_json(indent = 2), "application/json"
     else:
         raise FileNotFoundError("Unknown draft export; choose draft.drawio, draft.svg or draft.json.")
     headers = {"Cache-Control": "no-store"}
     if file_name == "draft.drawio":
         headers["Content-Disposition"] = f'attachment; filename="{graph.id}-r{graph.revision}.drawio"'
-    return Response(content=content, media_type=media_type, headers=headers)
+    return Response(content = content, media_type = media_type, headers = headers)
 
 
 @router.get("/{draft_id}/generations/{generation_id}/{file_name}")
 async def generated_artifact(draft_id: str, generation_id: str, file_name: str, request: Request,
-                             download: bool = Query(default=False)):
+                             download: bool = Query(default = False)):
     content = await asyncio.to_thread(request.app.state.workflow_service.artifact_bytes, draft_id, generation_id, file_name)
     disposition = "attachment" if download else "inline"
     header = f'{disposition}; filename="{file_name}"'
     if download and file_name == "workflow_flowchart.html":
         header = await asyncio.to_thread(request.app.state.workflow_service.flowchart_download_header, draft_id, generation_id)
-    return Response(content, media_type="text/html" if file_name.endswith(".html") else "application/json",
-                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+    return Response(content, media_type = "text/html" if file_name.endswith(".html") else "application/json",
+                    headers = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
                              "Content-Disposition": header})

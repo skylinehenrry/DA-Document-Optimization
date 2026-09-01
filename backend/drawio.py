@@ -1,22 +1,18 @@
-"""A lossless *topology* review boundary for diagrams.net / draw.io.
+"""Provide a lossless topology-review boundary for diagrams.net / draw.io.
 
-Export a .drawio file, edit it in diagrams.net, and use File > Save to return the
-whole document. Import replaces the graph's nodes and edges, including deletions;
-it never runs a model or infers connections from labels. Dragging, relabelling,
-adding, deleting and reconnecting ordinary shapes/connectors are supported.
-
-The server graph is the authority for source associations and analysis metadata.
-The file carries identity, positions, labels and connector ``daKind`` / ``daStatus``
-properties (editable through Edit Data). New shapes are unsourced process nodes.
-New connectors without that property have unknown semantics. Reconnecting or
-retyping an existing edge clears its old evidence and condition; immutable server
-revision history, rather than misleading citations, retains the old provenance.
-
-This module does not advance revisions or timestamps. The caller must compare and
-persist the returned document atomically against the input revision. Shape sizes,
-waypoints, colours and text formatting are presentation only. Groups, multiple
-pages/layers, ports and separately attached edge labels are deliberately rejected
-with an explanation instead of silently disappearing during conversion.
+- Export the complete graph so the user can move, relabel, add, remove, or reconnect
+  ordinary cards and connectors in diagrams.net.
+- Import the complete edited document as a replacement topology; never run a model
+  or infer missing connections from labels, positions, or visual styling.
+- Keep the server graph authoritative for source associations and analysis evidence.
+  Stable custom properties carry identity, edge kind, and proposal status.
+- Treat newly drawn shapes as unsourced process nodes and connectors without an
+  explicit kind as unknown relationships requiring review.
+- Clear stale evidence when an existing edge is reconnected or retyped; immutable
+  revision history preserves its earlier provenance for audit.
+- Leave revision and timestamp changes to the caller's atomic storage transaction.
+- Reject unsupported groups, pages, layers, ports, and separately attached edge
+  labels with an explanation rather than silently dropping diagram content.
 """
 
 from __future__ import annotations
@@ -128,7 +124,7 @@ def _decode_diagram(payload: str) -> ET.Element:
     if payload.startswith("<"):
         return _parse_xml(payload)
     try:
-        compressed = base64.b64decode("".join(payload.split()), validate=True)
+        compressed = base64.b64decode("".join(payload.split()), validate = True)
     except (binascii.Error, ValueError) as exc:
         raise ValueError("Invalid compressed .drawio payload; save the full diagram as .drawio XML.") from exc
     try:
@@ -204,7 +200,7 @@ class _PlainLabel(HTMLParser):
     _blocks = {"div", "p", "pre", "li", "ul", "ol"}
 
     def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
+        super().__init__(convert_charrefs = True)
         self.parts: list[str] = []
 
     def _newline(self) -> None:
@@ -244,7 +240,7 @@ class _PlainLabel(HTMLParser):
         raise ValueError("Processing instructions are not supported in diagram labels.")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen = True)
 class _Cell:
     id: str
     element: ET.Element
@@ -417,7 +413,7 @@ def export_drawio(graph: GraphDocument) -> str:
             "style": f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;startArrow=none;endArrow=block;endFill=1;strokeColor={colour};fontColor={colour};{dashed}",
         })
         ET.SubElement(cell, "mxGeometry", {"relative": "1", "as": "geometry"})
-    xml = ET.tostring(document, encoding="unicode", xml_declaration=True)
+    xml = ET.tostring(document, encoding = "unicode", xml_declaration = True)
     _check_payload(xml)
     return xml
 
@@ -482,7 +478,7 @@ def import_drawio(graph: GraphDocument, xml: str) -> GraphDocument:
         if not label.strip():
             raise ValueError(f"Node {cell.id} needs a nonblank label before import.")
         geometry = cell.element[0]
-        position = Position(x=_number(geometry.get("x"), f"{cell.id} x"), y=_number(geometry.get("y"), f"{cell.id} y"))
+        position = Position(x = _number(geometry.get("x"), f"{cell.id} x"), y = _number(geometry.get("y"), f"{cell.id} y"))
         if node_id in old_nodes:
             data = old_nodes[node_id].model_dump()
             # - A short exported filename is a display choice, not a source rename.
@@ -490,11 +486,11 @@ def import_drawio(graph: GraphDocument, xml: str) -> GraphDocument:
             # - A deliberate new label is still accepted without changing identity.
             if label == file_card_label(old_nodes[node_id]):
                 label = old_nodes[node_id].label
-            data.update(label=label, position=position)
+            data.update(label = label, position = position)
             node = GraphNode.model_validate(data)
         else:
             # A copied source node gets a new ID and therefore no source metadata.
-            node = GraphNode(id=node_id, label=label, kind="process", position=position)
+            node = GraphNode(id = node_id, label = label, kind = "process", position = position)
         nodes.append(node)
     edges: list[GraphEdge] = []
     for cell in connectors:
@@ -524,12 +520,12 @@ def import_drawio(graph: GraphDocument, xml: str) -> GraphDocument:
             status_changed = requested_status is not None and requested_status != previous.status
             changed = topology_changed or label != previous.label or status_changed
             data = previous.model_dump()
-            data.update(source=source, target=target, kind=kind, label=label)
+            data.update(source = source, target = target, kind = kind, label = label)
             if changed:
                 note = "Edited in diagrams.net."
                 if topology_changed:
                     note += f" Previous connection: {previous.source} → {previous.target} ({previous.kind}); reviewed connection: {source} → {target} ({kind}). Previous evidence and condition cleared; consult the prior revision for provenance."
-                    data.update(evidence=[], condition=None)
+                    data.update(evidence = [], condition = None)
                 elif label != previous.label:
                     note += " Label changed; endpoint direction, kind and source evidence were retained."
                 if status_changed:
@@ -541,14 +537,14 @@ def import_drawio(graph: GraphDocument, xml: str) -> GraphDocument:
                 # user correction does confirm it unless status was explicitly
                 # changed in the opposite direction.
                 status = requested_status if status_changed else "confirmed" if topology_changed else previous.status
-                data.update(origin="user", status=status, review_note=note)
+                data.update(origin = "user", status = status, review_note = note)
             edge = GraphEdge.model_validate(data)
         else:
             edge = GraphEdge(
-                id=edge_id, source=source, target=target, kind=kind, label=label,
-                origin="user", status=requested_status or "confirmed", review_note="Added in diagrams.net by the user; no source evidence has been inferred.",
+                id = edge_id, source = source, target = target, kind = kind, label = label,
+                origin = "user", status = requested_status or "confirmed", review_note = "Added in diagrams.net by the user; no source evidence has been inferred.",
             )
         edges.append(edge)
     data = graph.model_dump()
-    data.update(nodes=nodes, edges=edges)
+    data.update(nodes = nodes, edges = edges)
     return GraphDocument.model_validate(data)

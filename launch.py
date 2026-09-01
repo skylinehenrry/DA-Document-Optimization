@@ -54,7 +54,7 @@ def configure_console() -> None:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             try:
-                stream.reconfigure(errors="backslashreplace")
+                stream.reconfigure(errors = "backslashreplace")
             except (OSError, ValueError):
                 pass
 

@@ -9,6 +9,8 @@ Readable labels and grouped connections, without changing the saved graph.
 */
 
 export function basename(path) {
+  // - Shorten path-like display text only; never rewrite the stored source value.
+  // - Handle URLs, Windows drives, UNC paths, and POSIX paths on either platform.
   let text = String(path ?? "");
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) text = text.split(/[?#]/, 1)[0];
   text = text.replace(/^[a-z]:(?![\\/])/i, "");
@@ -16,6 +18,8 @@ export function basename(path) {
 }
 
 export function nodeName(node) {
+  // - Script and file cards show only the filename and suffix requested by the UI.
+  // - Process, decision, table, database, and API labels remain meaningful names.
   const sourceFile = node.kind === "script" || (node.kind === "module" && node.source_path);
   if (sourceFile) return basename(node.source_path ?? node.label) || node.label;
   if (node.kind === "file") return basename(node.details?.normalized_path ?? node.label) || node.label;
@@ -23,6 +27,14 @@ export function nodeName(node) {
 }
 
 export function connectionGroups(graph) {
+  /*
+  Build the compact direct-connection view without changing canonical topology.
+
+  - Combine repeated code-reference kinds only for identical directed endpoints.
+  - Keep resource relationship kinds separate because reads and writes differ.
+  - Retain every member ID so the inspector can expose and edit the original links.
+  - Propagate proposal status when any grouped member still needs confirmation.
+  */
   const nodes = new Map(graph.nodes.map(node => [node.id, node]));
   const groups = new Map();
   for (const edge of graph.edges) {

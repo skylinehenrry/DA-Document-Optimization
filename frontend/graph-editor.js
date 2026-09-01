@@ -31,6 +31,14 @@ function shortened(value, limit) {
 function pointString(point) { return `${point.x},${point.y}`; }
 
 export class GraphEditor {
+  /*
+  Manage canvas interaction while leaving graph ownership to ``GraphSession``.
+
+  - Pointer movement updates temporary card positions until a drag completes.
+  - Panning and zooming change the viewport only and never become graph edits.
+  - Selection callbacks identify canonical IDs used by the inspector and keyboard.
+  - Filtering controls visibility only; it cannot remove a saved node or edge.
+  */
   constructor(svg, {onSelect, onMove, onDelete, onViewChange}) {
     this.svg = svg;
     this.onSelect = onSelect;

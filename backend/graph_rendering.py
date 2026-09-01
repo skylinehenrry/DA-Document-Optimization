@@ -1,8 +1,15 @@
-"""Deterministic projections of the reviewed graph; no analysis or LLM calls.
+"""Render deterministic SVG and interactive HTML from the reviewed graph.
 
-Drawing ranks are derived from strongly connected components. They are a layout
-aid, not a claim about execution order. The original graph is embedded unchanged
-in the HTML so presentation and narrative enrichment cannot become topology.
+- Perform no source analysis, source execution, provider setup, or model request.
+- Derive drawing ranks from strongly connected components as a layout aid only;
+  never present those ranks as a claim about runtime execution order.
+- Respect reviewed card positions and route every canonical relationship, marking
+  unavoidable overlaps instead of hiding an edge.
+- Apply compact direct-connection grouping as presentation metadata while retaining
+  every original edge, identifier, evidence record, and review status.
+- Escape graph content before placing it in XML, HTML, JavaScript, or attributes.
+- Embed the authoritative graph unchanged so summaries and interaction cannot
+  become an alternate source of topology.
 """
 
 from __future__ import annotations
@@ -44,7 +51,7 @@ Rectangle = tuple[float, float, float, float]
 def _validated(graph: GraphDocument) -> GraphDocument:
     # Lists on a Pydantic instance may have been edited after construction. Do
     # not let such edits bypass endpoint validation and silently hide an edge.
-    return GraphDocument.model_validate(graph.model_dump(mode="json"))
+    return GraphDocument.model_validate(graph.model_dump(mode = "json"))
 
 
 def _drawing_layers(graph: GraphDocument) -> dict[str, int]:
@@ -85,7 +92,7 @@ def _drawing_layers(graph: GraphDocument) -> dict[str, int]:
         while stack:
             current = stack.pop()
             members.append(current)
-            for neighbor in sorted(reverse[current], reverse=True):
+            for neighbor in sorted(reverse[current], reverse = True):
                 if neighbor not in component_of:
                     component_of[neighbor] = index
                     stack.append(neighbor)
@@ -103,7 +110,7 @@ def _drawing_layers(graph: GraphDocument) -> dict[str, int]:
     ranks = {index: 0 for index in outgoing}
     while ready:
         _, current = heapq.heappop(ready)
-        for target in sorted(outgoing[current], key=components.__getitem__):
+        for target in sorted(outgoing[current], key = components.__getitem__):
             ranks[target] = max(ranks[target], ranks[current] + 1)
             incoming[target] -= 1
             if incoming[target] == 0:
@@ -122,11 +129,11 @@ def _overlaps(first: Position, second: Position, padding: float = 0) -> bool:
 
 def _layout(graph: GraphDocument) -> dict[str, Position]:
     layers = _drawing_layers(graph)
-    nodes = sorted(graph.nodes, key=lambda node: (layers[node.id], node.source_path or "", node.label, node.id))
+    nodes = sorted(graph.nodes, key = lambda node: (layers[node.id], node.source_path or "", node.label, node.id))
     # Saved positions are constraints. Missing positions are placed around them;
     # even negative saved coordinates are retained until the viewport is built.
     positions = {
-        node.id: node.position.model_copy(deep=True)
+        node.id: node.position.model_copy(deep = True)
         for node in nodes
         if node.position is not None
     }
@@ -135,12 +142,12 @@ def _layout(graph: GraphDocument) -> dict[str, Position]:
         if node.id in positions:
             continue
         layer = layers[node.id]
-        position = Position(x=MARGIN + layer * (NODE_WIDTH + HORIZONTAL_GAP), y=next_y.get(layer, MARGIN))
+        position = Position(x = MARGIN + layer * (NODE_WIDTH + HORIZONTAL_GAP), y = next_y.get(layer, MARGIN))
         while True:
             collisions = [other for other in positions.values() if _overlaps(position, other, _CLEARANCE)]
             if not collisions:
                 break
-            position = Position(x=position.x, y=max(other.y for other in collisions) + NODE_HEIGHT + VERTICAL_GAP)
+            position = Position(x = position.x, y = max(other.y for other in collisions) + NODE_HEIGHT + VERTICAL_GAP)
         positions[node.id] = position
         next_y[layer] = position.y + NODE_HEIGHT + VERTICAL_GAP
     return positions
@@ -157,7 +164,7 @@ def layout_graph(graph: GraphDocument) -> dict[str, Position]:
 
 
 def _escape(value: object) -> str:
-    return html.escape(_INVALID_XML.sub("\ufffd", str(value)), quote=True)
+    return html.escape(_INVALID_XML.sub("\ufffd", str(value)), quote = True)
 
 
 def _number(value: float) -> str:
@@ -170,7 +177,7 @@ def _number(value: float) -> str:
 def _graph_json(graph: GraphDocument) -> str:
     # ASCII escaping also preserves otherwise-invalid XML control characters in
     # the original data, without putting those characters into the document.
-    payload = json.dumps(graph.model_dump(mode="json"), ensure_ascii=True, sort_keys=True, allow_nan=False)
+    payload = json.dumps(graph.model_dump(mode = "json"), ensure_ascii = True, sort_keys = True, allow_nan = False)
     return payload.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
@@ -325,12 +332,12 @@ def _middle_route(start: Point, end: Point, obstacles: list[Rectangle], lane: fl
     def score(points):
         return occupied.shared_length(points), _route_cost(points), points
 
-    best = min(clear, key=score) if clear else None
+    best = min(clear, key = score) if clear else None
     if best is not None and occupied.shared_length(best) == 0:
         return best, False
     routed = _grid_route(start, end, obstacles, occupied, xs, ys)
     if routed is not None:
-        return min((best, routed), key=score) if best is not None else routed, False
+        return min((best, routed), key = score) if best is not None else routed, False
     if best is not None:
         return best, False
     # Overlapping user-positioned cards may leave no free port. Retain and mark
@@ -338,14 +345,14 @@ def _middle_route(start: Point, end: Point, obstacles: list[Rectangle], lane: fl
     return _simplify([start, (start[0], bottom + lane), (end[0], bottom + lane), end]), True
 
 
-@dataclass(frozen=True)
+@dataclass(frozen = True)
 class _Route:
     edge: GraphEdge
     points: tuple[Point, ...]
     obstructed: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen = True)
 class _Drawing:
     positions: dict[str, Point]
     routes: tuple[_Route, ...]
@@ -366,7 +373,7 @@ def _drawing(graph: GraphDocument) -> _Drawing:
     outgoing: dict[str, list[GraphEdge]] = {node_id: [] for node_id in positions}
     incoming: dict[str, list[GraphEdge]] = {node_id: [] for node_id in positions}
     loops: dict[str, list[GraphEdge]] = {node_id: [] for node_id in positions}
-    for edge in sorted(graph.edges, key=lambda edge: edge.id):
+    for edge in sorted(graph.edges, key = lambda edge: edge.id):
         outgoing[edge.source].append(edge)
         (loops if edge.source == edge.target else incoming)[edge.target].append(edge)
 
@@ -393,7 +400,7 @@ def _drawing(graph: GraphDocument) -> _Drawing:
     # edge's only way out of its card.
     occupied = _SegmentIndex()
     stubs: dict[str, tuple[Point, Point]] = {}
-    for edge in sorted(graph.edges, key=lambda edge: edge.id):
+    for edge in sorted(graph.edges, key = lambda edge: edge.id):
         start, end = source_ports[edge.id], target_ports[edge.id]
         start_stub = (start[0] + _STUB_LENGTH, start[1])
         end_stub = (end[0], end[1] - _STUB_LENGTH) if edge.source == edge.target else (end[0] - _STUB_LENGTH, end[1])
@@ -404,7 +411,7 @@ def _drawing(graph: GraphDocument) -> _Drawing:
     routes: list[_Route] = []
     rendered_segments = _SegmentIndex()
     shared_routes = False
-    for index, edge in enumerate(sorted(graph.edges, key=lambda edge: edge.id)):
+    for index, edge in enumerate(sorted(graph.edges, key = lambda edge: edge.id)):
         start, end = source_ports[edge.id], target_ports[edge.id]
         start_stub, end_stub = stubs[edge.id]
         middle, obstructed = _middle_route(start_stub, end_stub, obstacles, 24 + (index % 8) * 8, occupied)
@@ -468,7 +475,7 @@ def _edge_svg(route: _Route, nodes: dict[str, GraphNode], static: bool = False,
     edge = route.edge
     path = " ".join(("M" if index == 0 else "L") + _number(x) + " " + _number(y) for index, (x, y) in enumerate(route.points))
     segments = list(zip(route.points, route.points[1:]))
-    first, last = max(segments, key=lambda pair: abs(pair[0][0] - pair[1][0]) + abs(pair[0][1] - pair[1][1]))
+    first, last = max(segments, key = lambda pair: abs(pair[0][0] - pair[1][0]) + abs(pair[0][1] - pair[1][1]))
     label_x, label_y = (first[0] + last[0]) / 2, (first[1] + last[1]) / 2 - 8
     label = edge.label or edge.kind.replace("_", " ")
     if edge.condition:
@@ -531,7 +538,7 @@ def _visual_type(node: GraphNode) -> str:
     return {".csv": "csv", ".tsv": "csv", ".xlsx": "excel", ".xls": "excel", ".json": "json", ".md": "markdown", ".html": "html", ".log": "log"}.get(suffix, "file")
 
 
-@lru_cache(maxsize=20)
+@lru_cache(maxsize = 20)
 def _icon(visual_type: str) -> str:
     # Only internal, controlled visual types reach this function. Image context
     # also prevents an SVG asset from injecting active markup into the report.
@@ -710,7 +717,7 @@ def render_graph_html(
         f"({len(graph.edges)} relationship records). Repeated references share an arrow; no transitive links are added. "
         "Choose a node to see only its direct connections. Layout does not establish execution order or complete runtime control flow."
     )
-    template = _TEMPLATE_PATH.read_text(encoding="utf-8")
+    template = _TEMPLATE_PATH.read_text(encoding = "utf-8")
     template = template.replace("</style>", "{{ extra_style }}\n</style>", 1)
     template = template.replace("</header>", "{{ review_notices }}\n</header>", 1)
     template = template.replace("</body>", '{{ graph_data }}\n<script>document.querySelectorAll(".script-node").forEach(node => node.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); node.click(); } }));</script>\n</body>', 1)
@@ -719,8 +726,8 @@ def render_graph_html(
         "summary": _escape(overview),
         "canvas_width": str(drawing.width),
         "canvas_height": str(drawing.height),
-        "edge_svg": "\n".join(_edge_svg(route, nodes, connection=edge_connections[route.edge.id]) for route in drawing.routes),
-        "node_html": "\n".join(_node_html(node, drawing.positions[node.id], summaries, statuses) for node in sorted(graph.nodes, key=lambda node: node.id)),
+        "edge_svg": "\n".join(_edge_svg(route, nodes, connection = edge_connections[route.edge.id]) for route in drawing.routes),
+        "node_html": "\n".join(_node_html(node, drawing.positions[node.id], summaries, statuses) for node in sorted(graph.nodes, key = lambda node: node.id)),
         "extra_style": _EXTRA_STYLE,
         "review_notices": _notices_html(graph, drawing, statuses, summary_errors),
         "graph_data": f'<script type="application/json" id="graph-data" data-schema-version="{graph.schema_version}">{_graph_json(graph)}</script>',
@@ -758,7 +765,7 @@ def render_graph_svg(graph: GraphDocument) -> str:
     width = max(drawing.width, 1100)
     height = drawing.height + header_height
     node_svg = []
-    for node in sorted(graph.nodes, key=lambda node: node.id):
+    for node in sorted(graph.nodes, key = lambda node: node.id):
         x, y = drawing.positions[node.id]
         label_lines = _wrap_label(file_card_label(node))
         label = "".join(f'<tspan x="18" y="{39 + index * 16}">{_escape(line)}</tspan>' for index, line in enumerate(label_lines))
@@ -777,7 +784,7 @@ def render_graph_svg(graph: GraphDocument) -> str:
         f'<rect width="{width}" height="{height}" fill="#f8fafd"/><text class="heading" x="24" y="30">{_escape(graph.title)}</text>'
         f'<text class="caption" x="24" y="54">Revision {graph.revision} · {len(graph.nodes)} nodes · {len(connections)} direct connections ({len(graph.edges)} relationships) · Hover for evidence.</text>{notices}'
         f'<g transform="translate(0 {header_height})">'
-        + "\n".join(_edge_svg(route, node_lookup, static=True, connection=edge_connections[route.edge.id]) for route in drawing.routes)
+        + "\n".join(_edge_svg(route, node_lookup, static = True, connection = edge_connections[route.edge.id]) for route in drawing.routes)
         + "\n".join(node_svg)
         + f'</g><metadata id="graph-data">{_escape(_graph_json(graph))}</metadata></svg>'
     )
