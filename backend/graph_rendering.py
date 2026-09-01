@@ -27,7 +27,7 @@ from pathlib import Path
 import re
 from typing import Iterable
 
-from .graph_models import GraphDocument, GraphEdge, GraphNode, NarrativeSummary, Position
+from .graph_models import GraphDocument, GraphEdge, GraphNode, NarrativeSummary, Position, ProjectSummary
 from .graph_diagnostics import graph_diagnostics
 from .graph_presentation import DirectConnection, direct_connections, file_card_label
 
@@ -588,7 +588,7 @@ def _notice_lines(graph: GraphDocument, drawing: _Drawing) -> list[str]:
         lines.append(f"Dependency review: {coverage['review_sources']} analyzed file(s) contain unresolved constructs. Additional relationships may be missing.")
     proposed = sum(edge.status == "proposed" for edge in graph.edges)
     if proposed:
-        lines.append(f"Review required: {proposed} proposed relationship(s) are shown with dashed amber arrows.")
+        lines.append(f"Review required: {proposed} proposed relationship(s) are shown with dashed pink arrows.")
     if graph.issues:
         counts = diagnostics["counts"]
         lines.append(f"Analysis details: {counts['error']} errors, {counts['warning']} warnings and {counts['info']} informational notes in {len(diagnostics['groups'])} categories.")
@@ -674,12 +674,12 @@ _EXTRA_STYLE = """
     #arrow path { fill: #7d8ba2; }
     #arrowHover path { fill: #275dad; }
     .edge.is-active .edge-tooltip-text { opacity: 1; }
-    .edge[data-status="proposed"] .edge-path { stroke: #b45309; stroke-dasharray: 6 5; }
-    .edge[data-route-status="obstructed"] .edge-path { stroke: #c2410c; }
+    .edge[data-status="proposed"] .edge-path { stroke: #c43f91; stroke-dasharray: 6 5; }
+    .edge[data-route-status="obstructed"] .edge-path { stroke: #8b45b5; }
     .edge-tooltip-text { paint-order: stroke; stroke: #ffffff; stroke-width: 4px; stroke-linejoin: round; }
     .node-content { min-width: 0; }
     .icon img { display: block; width: 36px; height: 36px; }
-    .analysis-notices { max-height: 190px; overflow: auto; font: 12px/1.5 system-ui, sans-serif; color: #72501c; }
+    .analysis-notices { max-height: 190px; overflow: auto; font: 12px/1.5 system-ui, sans-serif; color: #8f3677; }
     .analysis-notices p { margin: 6px 0 0; }
     .analysis-notices details { margin-top: 6px; }
     .analysis-notices summary { cursor: pointer; }
@@ -693,7 +693,7 @@ _EXTRA_STYLE = """
     .canvas:not(.show-all-relationships) .connection-member,
     .canvas:not(.show-all-relationships) .relationship-label,
     .canvas.show-all-relationships .connection-label { display: none; }
-    .canvas:not(.show-all-relationships) .edge[data-connection-status="proposed"] .edge-path { stroke: #b45309; stroke-dasharray: 6 5; }
+    .canvas:not(.show-all-relationships) .edge[data-connection-status="proposed"] .edge-path { stroke: #c43f91; stroke-dasharray: 6 5; }
     .canvas .outside-focus { display: none !important; }
 """
 
@@ -703,8 +703,15 @@ def render_graph_html(
     summaries: dict[str, NarrativeSummary] | None = None,
     summary_statuses: dict[str, str] | None = None,
     *, summary_errors: dict[str, str] | None = None,
+    project_summary: ProjectSummary | None = None,
+    project_summary_status: str | None = None,
 ) -> str:
-    """Build a standalone report; narratives attach strictly by canonical node ID."""
+    """Build a standalone report; narratives attach strictly by canonical node ID.
+
+    - Place the project overview above the canvas so readers understand scope first.
+    - Escape every model-written field before adding it to the standalone document.
+    - Keep model prose separate from graph topology and connection rendering.
+    """
     graph = _validated(graph)
     summaries = {node_id: NarrativeSummary.model_validate(summary) for node_id, summary in (summaries or {}).items()}
     statuses = summary_statuses or {}
@@ -719,6 +726,7 @@ def render_graph_html(
     )
     template = _TEMPLATE_PATH.read_text(encoding = "utf-8")
     template = template.replace("</style>", "{{ extra_style }}\n</style>", 1)
+    template = template.replace('<div class="view-controls"', '{{ project_summary_html }}\n<div class="view-controls"', 1)
     template = template.replace("</header>", "{{ review_notices }}\n</header>", 1)
     template = template.replace("</body>", '{{ graph_data }}\n<script>document.querySelectorAll(".script-node").forEach(node => node.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); node.click(); } }));</script>\n</body>', 1)
     context = {
@@ -730,11 +738,37 @@ def render_graph_html(
         "node_html": "\n".join(_node_html(node, drawing.positions[node.id], summaries, statuses) for node in sorted(graph.nodes, key = lambda node: node.id)),
         "extra_style": _EXTRA_STYLE,
         "review_notices": _notices_html(graph, drawing, statuses, summary_errors),
+        "project_summary_html": _project_summary_html(project_summary, project_summary_status),
         "graph_data": f'<script type="application/json" id="graph-data" data-schema-version="{graph.schema_version}">{_graph_json(graph)}</script>',
     }
     # A single substitution pass is essential: user labels containing template
     # syntax must remain labels, and cannot replace later template slots.
     return _PLACEHOLDER.sub(lambda match: context[match.group(1)], template)
+
+
+def _project_summary_html(summary: ProjectSummary | None, status: str | None) -> str:
+    """Render the structured project summary as safe, compact HTML."""
+
+    if summary is None:
+        return ""
+    groups = []
+    for label, values in (
+        ("Key inputs", summary.key_inputs),
+        ("Key outputs", summary.key_outputs),
+        ("Limitations", summary.limitations),
+    ):
+        if values:
+            items = "".join(f"<li>{_escape(value)}</li>" for value in values)
+            groups.append(f"<section><h3>{label}</h3><ul>{items}</ul></section>")
+    mode = "Model summary" if status == "llm" else "Local summary"
+    return (
+        '<details class="project-overview" open>'
+        f'<summary>Project overview <span>{mode}</span></summary>'
+        f'<p>{_escape(summary.overview)}</p>'
+        f'<p class="project-flow">{_escape(summary.processing_flow)}</p>'
+        f'<div class="project-overview-grid">{"".join(groups)}</div>'
+        '</details>'
+    )
 
 
 def _wrap_label(text: str, width: int = 35) -> list[str]:
@@ -779,7 +813,7 @@ def render_graph_svg(graph: GraphDocument) -> str:
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-labelledby="graph-title graph-description">'
         f'<title id="graph-title">{_escape(graph.title)}</title><desc id="graph-description">Static dependency review preview. Positions do not establish execution order. Hover nodes and arrows for source evidence.</desc>'
-        '<style>text{font-family:system-ui,sans-serif;fill:#243247}.heading{font-size:21px;font-weight:650}.caption,.notice{font-size:12px}.notice{fill:#854d0e}.node rect{fill:#fff;stroke:#b6c4d5;stroke-width:1.4}.node-kind{font-size:10px;fill:#66758b}.node-label{font-size:13px;font-weight:600}.edge-separation{fill:none;stroke:#f8fafd;stroke-width:6;stroke-linejoin:round;pointer-events:none}.edge-path{fill:none;stroke:#687d97;stroke-width:1.6;marker-end:url(#preview-arrow)}.edge-low,.edge[data-connection-status="proposed"] .edge-path{stroke:#b45309;stroke-dasharray:6 5}.edge-label{font-size:10px;paint-order:stroke;stroke:#f8fafd;stroke-width:4px;stroke-linejoin:round}.connection-member,.relationship-label{display:none}</style>'
+        '<style>text{font-family:system-ui,sans-serif;fill:#243247}.heading{font-size:21px;font-weight:650}.caption,.notice{font-size:12px}.notice{fill:#8f3677}.node rect{fill:#fff;stroke:#b6c4d5;stroke-width:1.4}.node-kind{font-size:10px;fill:#66758b}.node-label{font-size:13px;font-weight:600}.edge-separation{fill:none;stroke:#f8fafd;stroke-width:6;stroke-linejoin:round;pointer-events:none}.edge-path{fill:none;stroke:#687d97;stroke-width:1.6;marker-end:url(#preview-arrow)}.edge-low,.edge[data-connection-status="proposed"] .edge-path{stroke:#c43f91;stroke-dasharray:6 5}.edge-label{font-size:10px;paint-order:stroke;stroke:#f8fafd;stroke-width:4px;stroke-linejoin:round}.connection-member,.relationship-label{display:none}</style>'
         '<defs><marker id="preview-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0 L10 4 L0 8 z" fill="#687d97"/></marker></defs>'
         f'<rect width="{width}" height="{height}" fill="#f8fafd"/><text class="heading" x="24" y="30">{_escape(graph.title)}</text>'
         f'<text class="caption" x="24" y="54">Revision {graph.revision} · {len(graph.nodes)} nodes · {len(connections)} direct connections ({len(graph.edges)} relationships) · Hover for evidence.</text>{notices}'

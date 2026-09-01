@@ -83,7 +83,11 @@ def parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name, help = description)
         command.add_argument("draft_id")
         command.add_argument("--revision", type = int, required = True)
-        command.add_argument("--model", choices = ["OpenAI", "Ollama"], help = "Defaults to the draft's saved provider.")
+        command.add_argument(
+            "--model",
+            choices = ["OpenAI", "AzureOpenAI", "Ollama"],
+            help = "Defaults to the draft's saved provider.",
+        )
         command.add_argument("--max-concurrency", type = int)
         if name == "generate":
             command.add_argument("--llm", action = "store_true", help = "Send saved source text to the configured model for richer summaries.")

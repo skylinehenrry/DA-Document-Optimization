@@ -19,10 +19,10 @@ This design separates dependency evidence, human decisions, optional model assis
 | `backend/graph_diagnostics.py` | Present truthful coverage and grouped findings without changing the graph or suppressing evidence. |
 | `backend/graph_edits.py`, `backend/drawio.py` | Validate explicit edits and the supported visual-file exchange format. |
 | `backend/graph_enrichment.py` | Add optional proposed relationships or local/model description text under separate schemas. |
-| `backend/model_provider.py` | Lazily initialize the retained Azure OpenAI or Ollama configuration only for an opted-in operation. |
+| `backend/model_provider.py` | Lazily initialize direct OpenAI, Azure OpenAI or local Ollama only for an opted-in operation. |
 | `backend/graph_rendering.py` | Render the exact saved topology and attach summaries, evidence and review notices. |
 | `frontend/api.js` | Handle transport errors, persist pending request IDs/bodies and validate scoped artifact addresses. |
-| `frontend/graph-state.js`, `frontend/graph-editor.js`, `frontend/app.js` | Keep local review state, support visual editing and revision-aware recovery, and display saved workflows/jobs. |
+| `frontend/graph-state.js`, `frontend/graph-editor.js`, `frontend/app.js` | Keep local review state, support visual editing and revision-aware recovery, and display jobs from the current launcher session. |
 
 The obsolete extraction/rendering implementation in `backend/tools.py`, its old `backend/classes.py` schemas, old prompts and the legacy `run_da_document_workflow` entry point have been removed. Provider configuration was moved without changing its deployment or authentication flow.
 
@@ -257,7 +257,7 @@ Post it to `/api/jobs` and poll its returned job ID. `edit`, `import` and `sugge
 | Method and path | Purpose |
 | --- | --- |
 | `POST /api/jobs` | Validate and durably submit any of the five job kinds; HTTP 202. |
-| `GET /api/jobs` | List saved jobs, newest first; optional `limit` 1–1,000. |
+| `GET /api/jobs` | List jobs newest first; the browser supplies `session_id` so Activity contains only the current launcher session. Optional `limit` is 1–1,000. |
 | `GET /api/jobs/{id}` | Load current state, result/error and saved progress. |
 | `POST /api/jobs/{id}/retry` | Explicit retry of a failed/interrupted job using `{"request_id":"NEW_UUID"}`; HTTP 202. |
 | `GET /api/health` | Read application/instance/store identity and worker availability. |
@@ -284,11 +284,11 @@ The old `/api/run`, `/api/logs`, `/api/heartbeat`, `/api/output-status` and `/ap
 
 ## LLM isolation and reproducible generation
 
-`backend/model_provider.py` keeps the original Azure OpenAI deployment, interactive Microsoft authentication and local Ollama model. Imports are lazy. Static analysis, local editing and default local summaries never initialize a provider. The selector value `OpenAI` continues to mean Azure OpenAI for compatibility; `Ollama` remains the local provider.
+`backend/model_provider.py` supports direct OpenAI, Azure OpenAI with interactive Microsoft authentication, and local Ollama. Imports are lazy. Static analysis, local editing and local summaries never initialize a provider. OpenAI reads `OPENAI_API_KEY`; Azure OpenAI supports endpoint, deployment and API-version environment overrides.
 
 Optional suggestions may only connect existing node IDs and must involve the script being examined. Quoted line ranges and exact excerpts are validated against saved source. Valid quotes do not prove a proposed relationship is correct, so accepted suggestions remain unconfirmed. Missing concepts without existing nodes must be added manually or supported by a later extractor.
 
-During final generation, model output is restricted to `high_level` and `detailed` description text. The reviewed graph is authoritative, its topology signature is checked before/after enrichment and rendering, and the canonical graph is embedded in the HTML. Source comments, strings, labels and metadata are explicitly treated as untrusted data. This prevents prose from becoming new edges; it does not prove every generated prose claim.
+During final generation, each script receives structured `high_level` and `detailed` prose. A second structured request combines the high-level script results with reviewed topology into a project overview, processing-flow explanation, inputs, outputs and limitations. The provider is initialized once and reused for both schemas. The reviewed graph remains authoritative and its topology signature is checked before and after enrichment and rendering.
 
 Summary statuses distinguish intentional offline descriptions (`deterministic`) from requested model output that could not be used (`fallback`). Initialization failure, timeout, missing/oversized source or invalid output records a reason and uses a local English description. There are up to two attempts per source. Successful responses are cached by source content, reviewed local context, provider identity, language and prompt version. Fallback results are not successful cache entries. The generated chart groups fallback reasons rather than listing an unexplained status for every file.
 
@@ -298,30 +298,21 @@ Model, language and concurrency options omitted from later API/CLI requests inhe
 
 Source snapshots are retained once per draft and checked independently of the original byte hashes. Generation reads these saved snapshots, not mutable source files on disk. It checks the expected revision before work and again when recording the generation. A competing edit causes stale generation to be rejected; already successful older generations remain available.
 
-Artifacts are assembled in a temporary sibling directory, flushed and published together before the database advertises the generation. Receipt reconciliation protects a committed generation if interruption happens before its job result is returned. Uncommitted temporary/partial output is not served as success. The application never overwrites an earlier registered generation, but local users can still alter files; integrity checks detect that at download time.
+Private artifacts are assembled in a temporary sibling directory, flushed and published together before the database advertises the generation. The public project-named HTML is replaced atomically and restored if the database commit fails. Receipt reconciliation protects a committed generation if interruption happens before its job result is returned. Earlier registered private generations remain immutable; integrity checks detect local changes to their files.
 
 ## Output paths and downloads
 
 ```text
-<da_document_folder>/outputs/workflows/<draft_id>/
-  revisions/<revision>/
-    draft.json
-    draft.drawio
-    draft.svg
-    review.json
-  generations/<generation_id>/
-    workflow_flowchart.html
-    workflow_graph.json
-    summaries.json
-    review.json
-    generation_manifest.json
+<da_document_folder>/output/<project name>.html
 ```
 
-`result.outputs.flowchart` opens the generated HTML. `result.outputs.flowchart_download` includes `?download=1` and downloads it with an HTML filename. The generation manifest records each artifact's scoped URL and integrity hash. The API serves the HTML inline by default and as an attachment when requested. URLs stay tied to draft/generation identity across backend restarts, provided the same store and output files remain available.
+The selected folder contains only this public deliverable. Revision exports, graph JSON, summaries, reviews, manifests and integrity copies are written below `<private store>/artifacts/<draft_id>/`.
+
+`result.outputs.flowchart` opens the integrity-checked private copy. `result.outputs.flowchart_download` includes `?download=1`. The manifest also records `output_directory` and `output_file` for the atomically replaced public HTML. API links remain tied to draft/generation identity across backend restarts when the same private store remains available.
 
 Filesystem paths are not browser URLs. Do not construct a link from the last selected output folder or use the retired global output route. A missing/moved artifact returns an actionable 404; changed content fails integrity validation. Recreate output by generating again from the saved revision, or restore the original files. A draft's missing convenience exports can be rebuilt/downloaded independently; export trouble does not roll back a committed revision.
 
-Downloaded HTML contains its presentation, icons, script summaries and graph data and can be opened without the local server. A database record alone is not a backup of generated HTML. Preserve both the private store and generated output directories when backing up or moving work.
+The public HTML contains its presentation, icons, script summaries, project summary and graph data and can be opened without the local server. Preserve the private store if revision history and integrity-checked API downloads must survive a move.
 
 ## Direct command-line workflow
 

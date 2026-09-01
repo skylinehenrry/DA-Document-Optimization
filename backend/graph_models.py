@@ -173,6 +173,21 @@ class NarrativeSummary(StrictModel):
     detailed: str = Field(min_length = 1, max_length = 40000)
 
 
+class ProjectSummary(StrictModel):
+    """Project-level narrative assembled from reviewed topology and script summaries.
+
+    - Narrative fields explain the project without carrying node or edge mutations.
+    - Inputs and outputs remain short display lists rather than alternate resources.
+    - Limitations preserve uncertainty from analysis and summary fallback.
+    """
+
+    overview: str = Field(min_length = 1, max_length = 12000)
+    processing_flow: str = Field(min_length = 1, max_length = 24000)
+    key_inputs: list[str] = Field(default_factory = list, max_length = 50)
+    key_outputs: list[str] = Field(default_factory = list, max_length = 50)
+    limitations: list[str] = Field(default_factory = list, max_length = 50)
+
+
 def topology_signature(graph: GraphDocument) -> tuple:
     """A renderer/enricher must preserve IDs, endpoint direction and edge type."""
     return (

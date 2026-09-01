@@ -3,6 +3,8 @@ Run browser actions as durable jobs owned by the local application.
 - Save each request before returning an accepted response to the browser.
 - Reusing its request identifier returns the same job; changed input is rejected.
 - Keep job state and progress in SQLite so a browser reload loses no work.
+- Tag browser jobs with one launcher session so a newly opened command session
+  starts with an empty activity view while a refresh of the same page can recover.
 - One operating-system lock permits one worker per store, even when two server
   processes are opened; a second server can still read and submit requests.
 - A stopped process releases that lock automatically. Its successor reconciles
@@ -60,6 +62,7 @@ class JobRequest(StrictModel):
     draft_id: str | None = Field(default = None, pattern = IDENTIFIER)
     payload: dict[str, Any]
     request_id: UUID
+    session_id: UUID = UUID(int = 0)
 
     @model_validator(mode = "after")
     def validate_action(self):
@@ -152,6 +155,7 @@ class JobRepository:
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY,
                     request_id TEXT NOT NULL UNIQUE,
+                    session_id TEXT,
                     fingerprint TEXT NOT NULL,
                     kind TEXT NOT NULL,
                     target_draft_id TEXT,
@@ -183,6 +187,9 @@ class JobRepository:
             columns = {row["name"] for row in db.execute("PRAGMA table_info(jobs)")}
             if "result_summary_json" not in columns:
                 db.execute("ALTER TABLE jobs ADD COLUMN result_summary_json TEXT")
+            if "session_id" not in columns:
+                db.execute("ALTER TABLE jobs ADD COLUMN session_id TEXT")
+            db.execute("CREATE INDEX IF NOT EXISTS jobs_session_created ON jobs(session_id, created_at)")
 
     @staticmethod
     def _row(db, job_id: str):
@@ -201,7 +208,7 @@ class JobRepository:
     @staticmethod
     def _public_columns(summary: bool = False) -> str:
         result_column = "COALESCE(result_summary_json, result_json) AS result_json" if summary else "result_json"
-        return "id, request_id, kind, state, draft_id, error_json, retry_of, created_at, updated_at, " + result_column
+        return "id, request_id, session_id, kind, state, draft_id, error_json, retry_of, created_at, updated_at, " + result_column
 
     @staticmethod
     def _public(db, row, *, summary: bool = False) -> dict:
@@ -218,7 +225,7 @@ class JobRepository:
         logs.reverse()
         retained_count = db.execute("SELECT count(*) FROM job_logs WHERE job_id=?", (row["id"],)).fetchone()[0]
         return {
-            "id": row["id"], "request_id": row["request_id"], "kind": row["kind"],
+            "id": row["id"], "request_id": row["request_id"], "session_id": row["session_id"], "kind": row["kind"],
             "state": row["state"], "draft_id": row["draft_id"],
             "result": result, "result_complete": not summary,
             "error": json.loads(row["error_json"]) if row["error_json"] else None,
@@ -243,6 +250,7 @@ class JobRepository:
         """
         fingerprint = hashlib.sha256(json_text({
             "kind": request.kind, "draft_id": request.draft_id, "payload": request.payload,
+            "session_id": str(request.session_id),
             "retry_of": retry_of,
         }).encode("utf-8")).hexdigest()
         with self.store.connection() as db:
@@ -272,10 +280,10 @@ class JobRepository:
                 self.store._row(db, request.draft_id)
             now, job_id = utc_now(), "job_" + uuid4().hex
             db.execute("""INSERT INTO jobs
-                (id, request_id, fingerprint, kind, target_draft_id, draft_id, payload_json,
+                (id, request_id, session_id, fingerprint, kind, target_draft_id, draft_id, payload_json,
                  state, retry_of, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)""", (
-                job_id, str(request.request_id), fingerprint, request.kind, request.draft_id,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)""", (
+                job_id, str(request.request_id), str(request.session_id), fingerprint, request.kind, request.draft_id,
                 request.draft_id, json_text(request.payload), retry_of, now, now,
             ))
             self._log(db, job_id, "Job saved and queued. You can close or reload the browser without cancelling it.")
@@ -285,7 +293,8 @@ class JobRepository:
         with self.store.connection() as db:
             previous = self._row(db, job_id)
             request = JobRequest(kind = previous["kind"], draft_id = previous["target_draft_id"],
-                                 payload = json.loads(previous["payload_json"]), request_id = request_id)
+                                 payload = json.loads(previous["payload_json"]), request_id = request_id,
+                                 session_id = previous["session_id"] or UUID(int = 0))
         return self.enqueue(request, retry_of = job_id)
 
     def get(self, job_id: str) -> dict:
@@ -295,12 +304,17 @@ class JobRepository:
                 raise DraftNotFound(f"Job not found: {job_id}")
             return self._public(db, row)
 
-    def list(self, limit: int = 100, *, summary: bool = False) -> list[dict]:
+    def list(self, limit: int = 100, *, summary: bool = False, session_id: UUID | None = None) -> list[dict]:
         with self.store.connection() as db:
             # Avoid reading uploaded XML and large graph JSON merely to poll
             # progress. New jobs store this small result beside the full record.
-            rows = db.execute("SELECT " + self._public_columns(summary) +
-                              " FROM jobs ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)).fetchall()
+            query = "SELECT " + self._public_columns(summary) + " FROM jobs"
+            arguments: tuple = (limit,)
+            if session_id is not None:
+                query += " WHERE session_id=?"
+                arguments = (str(session_id), limit)
+            query += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
+            rows = db.execute(query, arguments).fetchall()
             return [self._public(db, row, summary = summary) for row in rows]
 
     def busy(self) -> bool:
@@ -555,8 +569,13 @@ async def submit_job(body: JobRequest, request: Request):
 
 @router.get("")
 async def list_jobs(request: Request, limit: int = Query(default = 100, ge = 1, le = 1000),
-                    summary: bool = Query(default = False)):
-    return await asyncio.to_thread(request.app.state.workflow_jobs.repository.list, limit, summary = summary)
+                    summary: bool = Query(default = False), session_id: UUID | None = None):
+    return await asyncio.to_thread(
+        request.app.state.workflow_jobs.repository.list,
+        limit,
+        summary = summary,
+        session_id = session_id,
+    )
 
 
 @router.get("/{job_id}")

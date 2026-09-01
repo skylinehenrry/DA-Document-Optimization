@@ -10,7 +10,7 @@ Visual system for DA Document Generator.
 /*
 Theme tokens.
 - Blue is the default even before the application module has loaded.
-- Violet and Graphite change the same small set of accent tokens.
+- Violet and Pink change the same small set of accent tokens.
 - Status colours remain stable so a theme change cannot change their meaning.
 - Theme selection is a browser preference, not part of the generated graph.
 */
@@ -23,33 +23,25 @@ Theme tokens.
   --border-strong: #c5c9d0;
   --paper: #ffffff;
   --background: #ffffff;
-  --sidebar: #f6f7f9;
   --surface: #f7f8fa;
   --hover: #edeff3;
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
   --accent-soft: #edf3ff;
   --accent-border: #bdcffb;
-  --success: #257346;
-  --success-soft: #edf7f0;
-  --amber: #8a5b11;
-  --amber-light: #fff8e8;
-  --red: #b3261e;
-  --red-light: #fceeed;
+  --success: #6847c7;
+  --success-soft: #f2efff;
+  --review: #aa387e;
+  --review-soft: #fff0f8;
+  --red: #b52a68;
+  --red-light: #fff0f6;
   --radius: 12px;
-  --sidebar-width: 236px;
 }
 :root[data-theme="violet"] {
   --accent: #7047c4;
   --accent-hover: #5935a3;
   --accent-soft: #f3effc;
   --accent-border: #d4c5ef;
-}
-:root[data-theme="graphite"] {
-  --accent: #414957;
-  --accent-hover: #262d38;
-  --accent-soft: #edf0f4;
-  --accent-border: #c9ced8;
 }
 
 /*
@@ -102,41 +94,16 @@ small { font-size: 12px; }
 .quiet-note svg { width: 15px; height: 15px; }
 
 /*
-Application shell and saved library.
-- Keep navigation visually separate from the white editing workspace.
-- Truncate only the breadcrumb; allow saved project names to wrap.
-- Use an explicit selected state and retain full paths in existing tooltips.
+Application shell and shared navigation.
+- Keep navigation visually separate from the editing workspace.
+- Truncate only the current-project breadcrumb when the header is narrow.
+- Retain full project paths in the centered project heading.
 */
-.library-sidebar { width: var(--sidebar-width); background: var(--sidebar); border-right: 1px solid var(--border); position: fixed; inset: 0 auto 0 0; display: flex; flex-direction: column; padding: 24px 16px 18px; z-index: 20; }
-.brand { display: flex; align-items: center; gap: 10px; text-align: left; background: none; border: 0; padding: 0 4px; color: var(--ink); }
-.library-brand-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
-.brand strong { font-size: 15px; letter-spacing: -.025em; white-space: nowrap; }
-.brand small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
-.brand-mark { width: 34px; height: 34px; background: var(--accent); color: white; border-radius: 9px; display: grid; place-items: center; }
-.brand-mark svg { width: 22px; height: 22px; }
-.new-analysis { margin: 29px 0 25px; justify-content: flex-start; min-height: 42px; padding-left: 13px; }
-.library-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 5px 7px; }
-.library-heading h2 { font-size: 12px; font-weight: 550; letter-spacing: 0; color: var(--muted); }
 .search-control { display: flex; align-items: center; gap: 8px; background: var(--paper); border: 1px solid var(--border); border-radius: 8px; min-width: 0; padding: 0 11px; }
 .search-control svg { width: 16px; height: 16px; color: var(--quiet); }
 .search-control input { border: 0; background: transparent; outline: none; width: 100%; min-width: 0; padding: 10px 0; font-size: 12px; color: var(--ink); }
 .search-control:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
-.library-search { margin-bottom: 15px; }
-.draft-list { overflow: auto; flex: 1; margin: 0 -4px; padding: 0 4px; }
-.library-empty { font-size: 12px; color: var(--muted); line-height: 1.75; padding: 12px 9px; }
-.draft-item { display: block; width: 100%; text-align: left; border: 1px solid transparent; border-radius: 8px; padding: 11px 9px; background: none; color: var(--ink); margin-bottom: 4px; }
-.draft-item:hover { background: var(--hover); }
-.draft-item.is-selected { background: var(--accent-soft); color: var(--accent); }
-.draft-item-title { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; font-weight: 550; line-height: 1.45; overflow-wrap: anywhere; }
-.draft-item-title svg { width: 17px; height: 17px; margin-top: 1px; color: var(--quiet); }
-.draft-item.is-selected svg { color: var(--accent); }
-.draft-item-meta { display: block; font-size: 11px; color: var(--muted); margin: 6px 0 0 26px; }
-.sidebar-footer { padding: 19px 5px 0; border-top: 1px solid var(--border); margin-top: 14px; }
-.sidebar-footer > p { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--muted); }
-.sidebar-footer > p svg { width: 16px; height: 16px; margin-top: 1px; }
-.sidebar-footer small { display: block; font-size: 11px; line-height: 1.6; margin-top: 3px; }
-.sidebar-footer .text-button { width: 100%; justify-content: flex-start; padding-left: 0; margin-top: 14px; }
-.workspace { margin-left: var(--sidebar-width); padding: 0 36px; max-width: 2200px; }
+.workspace { margin-left: 0; padding: 0 36px; max-width: 2200px; }
 .topbar { display: flex; justify-content: space-between; align-items: center; height: 68px; border-bottom: 1px solid var(--border); gap: 12px; }
 .breadcrumb { display: flex; align-items: center; gap: 11px; color: var(--muted); font-size: 12px; min-width: 0; }
 .breadcrumb > svg { width: 17px; height: 17px; }
@@ -146,7 +113,7 @@ Application shell and saved library.
 .connection-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
 .connection-status i { width: 6px; height: 6px; background: var(--quiet); border-radius: 50%; }
 .connection-status[data-state="online"] i { background: var(--success); }
-.connection-status[data-state="offline"] i { background: var(--amber); }
+.connection-status[data-state="offline"] i { background: var(--review); }
 .activity-count { border-radius: 20px; background: var(--accent); color: white; min-width: 18px; padding: 2px 5px; font-size: 10px; }
 .page-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin: 34px 0 27px; }
 .page-heading h1 { overflow-wrap: anywhere; }
@@ -166,7 +133,6 @@ Application shell and saved library.
 .stage-panel { min-height: 450px; }
 .panel { border: 1px solid var(--border); background: var(--paper); border-radius: var(--radius); }
 .workspace-footer { display: flex; justify-content: space-between; color: var(--quiet); font-size: 11px; padding: 30px 0 23px; gap: 16px; }
-.mobile-menu { display: none; }
 
 /*
 Project setup.
@@ -230,19 +196,19 @@ input::placeholder, textarea::placeholder { color: var(--quiet); opacity: 1; }
 /*
 Feedback and status.
 - Always pair semantic colours with text or an icon.
-- Uncertain connections keep their amber styling in every accent theme.
+- Uncertain connections keep their pink review styling in every accent theme.
 - Notices wrap without pushing the page beyond the viewport on narrow screens.
 */
-.notice { display: flex; align-items: flex-start; gap: 11px; border: 1px solid #c8dfd0; background: var(--success-soft); padding: 14px 16px; border-radius: 9px; margin-bottom: 18px; font-size: 13px; color: var(--success); }
+.notice { display: flex; align-items: flex-start; gap: 11px; border: 1px solid #d9cdf7; background: var(--success-soft); padding: 14px 16px; border-radius: 9px; margin-bottom: 18px; font-size: 13px; color: var(--success); }
 .notice > svg { width: 18px; height: 18px; margin-top: 2px; }
 .notice > div:not(.button-row) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .notice p { font-size: 12px; line-height: 1.65; margin-top: 3px; }
-.notice-warning { background: var(--amber-light); border-color: #ead9b4; color: var(--amber); }
-.notice-error { background: var(--red-light); border-color: #e9cbc7; color: var(--red); }
+.notice-warning { background: var(--review-soft); border-color: #efc4dc; color: var(--review); }
+.notice-error { background: var(--red-light); border-color: #efbfd3; color: var(--red); }
 .notice .text-button { color: inherit; }
 .notice-dismiss { margin-left: auto; }
 .badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 5px; padding: 3px 7px; font-size: 11px; white-space: nowrap; background: var(--success-soft); color: var(--success); }
-.badge.warning { background: var(--amber-light); color: var(--amber); }
+.badge.warning { background: var(--review-soft); color: var(--review); }
 .badge.error { background: var(--red-light); color: var(--red); }
 .badge.info { background: var(--surface); color: var(--muted); }
 .task-notice { align-items: center; }
@@ -276,8 +242,8 @@ Review workspace and diagram.
 .edit-bar { display: flex; align-items: center; justify-content: space-between; padding: 9px 16px; border-bottom: 1px solid var(--border); background: var(--paper); gap: 12px; flex-wrap: wrap; }
 .save-state { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
 .save-state i { width: 5px; height: 5px; background: var(--success); border-radius: 50%; }
-.save-state.is-dirty { color: var(--amber); }
-.save-state.is-dirty i { background: var(--amber); }
+.save-state.is-dirty { color: var(--review); }
+.save-state.is-dirty i { background: var(--review); }
 .edit-bar .button-row { gap: 4px; }
 .edit-bar .text-button { font-size: 12px; min-height: 34px; }
 .toolbar-divider { height: 19px; width: 1px; background: var(--border); margin: 0 6px; }
@@ -304,7 +270,7 @@ Review workspace and diagram.
 .edge-hit { stroke: transparent; stroke-width: 15; fill: none; pointer-events: stroke; }
 .canvas-edge:hover .edge-visible, .canvas-edge:focus-visible .edge-visible { stroke: var(--accent); stroke-width: 2; }
 .canvas-edge.is-selected .edge-visible { stroke: var(--accent); stroke-width: 2.3; }
-.canvas-edge.is-proposed .edge-visible { stroke: var(--amber); stroke-dasharray: 5 5; }
+.canvas-edge.is-proposed .edge-visible { stroke: var(--review); stroke-dasharray: 5 5; }
 .edge-label-bg { fill: white; stroke: var(--accent-border); stroke-width: 1; }
 .edge-label { fill: var(--accent); font-size: 11px; font-family: inherit; }
 .canvas-floating { position: absolute; left: 14px; right: 14px; bottom: 13px; display: flex; align-items: center; justify-content: space-between; gap: 8px; pointer-events: none; }
@@ -317,7 +283,7 @@ Review workspace and diagram.
 .legend, .legend-proposed { display: flex; align-items: center; gap: 6px; }
 .legend i { display: block; width: 16px; height: 1px; background: #8c96a5; }
 .legend-proposed { margin-left: 7px; }
-.legend-proposed i { background: none; border-top: 1px dashed var(--amber); }
+.legend-proposed i { background: none; border-top: 1px dashed var(--review); }
 .inspector { border-left: 1px solid var(--border); padding: 22px 18px; max-height: 520px; overflow-y: auto; background: var(--paper); font-size: 12px; }
 .inspector h3 { font-size: 15px; }
 .inspector .eyebrow { font-size: 10px; margin-bottom: 9px; }
@@ -371,12 +337,12 @@ Findings and source evidence.
 .finding-occurrence > strong { display: block; overflow-wrap: anywhere; font-size: 12px; color: var(--ink); margin-bottom: 5px; }
 .finding-occurrence pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; background: var(--surface); padding: 10px; border-radius: 5px; max-height: 160px; overflow: auto; }
 .finding-occurrence .text-button { font-size: 11px; padding-left: 0; }
-.proposed-review { border: 1px solid #e5d5b2; background: var(--amber-light); border-radius: 8px; padding: 17px; margin-bottom: 20px; }
-.proposed-review h4 { color: var(--amber); font-size: 13px; }
-.proposed-review > p { font-size: 12px; color: var(--amber); margin: 6px 0 12px; }
-.proposed-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid #eee1c8; font-size: 12px; }
+.proposed-review { border: 1px solid #efc4dc; background: var(--review-soft); border-radius: 8px; padding: 17px; margin-bottom: 20px; }
+.proposed-review h4 { color: var(--review); font-size: 13px; }
+.proposed-review > p { font-size: 12px; color: var(--review); margin: 6px 0 12px; }
+.proposed-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid #f2d5e5; font-size: 12px; }
 .proposed-row > span { overflow-wrap: anywhere; }
-.proposed-row small { display: block; font-size: 11px; color: var(--amber); }
+.proposed-row small { display: block; font-size: 11px; color: var(--review); }
 .empty-state { padding: 50px 20px; text-align: center; color: var(--muted); }
 .empty-state svg { margin: 0 auto 14px; color: var(--accent); width: 30px; height: 30px; }
 .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: var(--ink); }
@@ -407,7 +373,7 @@ Generation and downloads.
 .provider-fields .advanced-settings { margin-top: 17px; }
 .local-summary-note { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
 .local-summary-note svg { width: 16px; height: 16px; color: var(--success); }
-.checkbox-line { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; line-height: 1.65; color: var(--amber); }
+.checkbox-line { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; line-height: 1.65; color: var(--review); }
 .checkbox-line input { margin-top: 3px; accent-color: var(--accent); }
 .generation-footnote { font-size: 12px; color: var(--muted); line-height: 1.75; margin-top: 21px; padding-top: 20px; border-top: 1px solid var(--border); }
 .readiness-line { display: flex; align-items: center; gap: 8px; color: var(--success); font-size: 12px; line-height: 1.6; padding: 12px; background: var(--success-soft); border-radius: 8px; margin-bottom: 20px; }
@@ -459,7 +425,6 @@ Dialogs, appearance and activity.
 .theme-swatch { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; background: var(--swatch); }
 .theme-choice[data-theme-option="blue"] { --swatch: #2563eb; }
 .theme-choice[data-theme-option="violet"] { --swatch: #7047c4; }
-.theme-choice[data-theme-option="graphite"] { --swatch: #414957; }
 .theme-choice > svg { width: 14px; height: 14px; margin-left: auto; color: var(--accent); opacity: 0; }
 .theme-choice:has(input:checked) > svg { opacity: 1; }
 .activity-dialog { margin: 0 0 0 auto; min-height: 100dvh; max-height: 100dvh; border-radius: 0; width: min(500px, 100vw); max-width: none; padding: 27px; }
@@ -481,7 +446,7 @@ Dialogs, appearance and activity.
 Responsive behaviour.
 - Reflow controls before reducing readable text sizes.
 - Stack the inspector below the canvas when two columns would be cramped.
-- Keep the mobile library operable and avoid offscreen form actions.
+- Keep mobile controls operable and avoid offscreen form actions.
 - Honour reduced-motion and Windows forced-colour preferences.
 */
 @media (min-width: 1650px) {
@@ -491,10 +456,7 @@ Responsive behaviour.
   .analysis-layout { gap: 48px; }
 }
 @media (max-width: 1200px) {
-  :root { --sidebar-width: 220px; }
   .workspace { padding: 0 26px; }
-  .library-sidebar { padding-inline: 12px; }
-  .brand strong { font-size: 14px; }
   .analysis-layout { gap: 24px; grid-template-columns: minmax(0, 1.35fr) minmax(230px, .8fr); }
   .analysis-card, .generation-settings, .generation-result { padding: 24px; }
   .review-overview { flex-wrap: wrap; }
@@ -517,10 +479,7 @@ Responsive behaviour.
   .review-tools { padding-bottom: 7px; }
 }
 @media (max-width: 800px) {
-  .library-sidebar { transform: translateX(-100%); visibility: hidden; transition: transform .2s; width: 270px; }
-  .library-sidebar.is-open { transform: translateX(0); visibility: visible; box-shadow: 12px 0 30px #20212422; }
   .workspace { margin-left: 0; padding: 0 22px; }
-  .mobile-menu { display: inline-flex; }
   .topbar { height: 60px; }
   .page-heading { margin: 27px 0; }
   .page-heading h1 { font-size: 28px; }
@@ -598,7 +557,7 @@ Responsive behaviour.
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
 @media (forced-colors: active) {
-  .button-primary, .step-button.is-current, .draft-item.is-selected { border: 1px solid Highlight; }
+  .button-primary, .step-button.is-current { border: 1px solid Highlight; }
   .theme-choice:has(input:checked) { outline: 2px solid Highlight; }
   .theme-swatch { forced-color-adjust: none; }
   .canvas-node.is-selected .node-card { stroke: Highlight; }
@@ -609,8 +568,7 @@ Restored DA Document Generator workspace.
 
 - Return to the earlier full-width header, centred configuration form, outlined
   progress stages, compact run log and restrained blue accent requested by users.
-- Keep the saved-workflow library as an on-demand drawer. It still exposes every
-  durable draft and recovery action without permanently narrowing the workspace.
+- Give configuration and graph surfaces the full browser width.
 - Reuse the current Analyze, Review and Generate controls rather than recreating
   the old single-pass process; appearance changes must not weaken revision safety.
 - Use system fonts and local SVG symbols so macOS and Windows render the same page
@@ -624,7 +582,6 @@ Restored DA Document Generator workspace.
   --border-strong: #bdcbe0;
   --paper: #ffffff;
   --background: #f8fafc;
-  --sidebar: #f7f9fc;
   --surface: #f4f7fb;
   --hover: #edf3fc;
   --accent: #0b5cff;
@@ -647,12 +604,12 @@ body { background: var(--background); }
 }
 
 /*
-Top bar and saved-workflow drawer.
+Top bar and current-session identity.
 
 - The product name anchors the page as it did in the earlier interface.
 - The current project name is shortened in the header but remains fully visible in
   the project heading after analysis.
-- The drawer is hidden from sight and keyboard navigation until explicitly opened.
+- Session actions remain available at the left and right edges of the header.
 */
 .topbar {
   min-height: 70px;
@@ -667,17 +624,6 @@ Top bar and saved-workflow drawer.
 .app-identity strong { font-size: 21px; line-height: 1.2; letter-spacing: -.025em; white-space: nowrap; }
 .current-project { color: var(--muted); font-size: 12px; border-left: 1px solid var(--border); padding-left: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
 .topbar-actions { gap: 9px; }
-.library-toggle { border-color: var(--border); background: var(--paper); color: var(--ink); padding-inline: 12px; }
-.library-sidebar {
-  width: min(320px, calc(100vw - 32px));
-  transform: translateX(-102%);
-  visibility: hidden;
-  transition: transform .2s ease, visibility .2s;
-  box-shadow: 12px 0 32px #18304f1f;
-}
-.library-sidebar.is-open { transform: translateX(0); visibility: visible; }
-#closeLibrary { display: inline-flex; }
-.library-sidebar .brand strong { font-size: 15px; }
 
 /*
 Page headings and numbered section dividers.
@@ -819,8 +765,6 @@ Responsive restoration.
   .topbar { padding: 10px 16px; }
   .app-identity-mark, .current-project, .connection-status { display: none; }
   .app-identity strong { font-size: 17px; }
-  .library-toggle { font-size: 0; width: 38px; padding: 8px; }
-  .library-toggle svg { width: 18px; height: 18px; }
   .workflow-steps { grid-template-columns: 1fr; gap: 8px; }
   .step-button small { display: block; }
   .progress-card { padding: 16px; }
@@ -835,4 +779,145 @@ Responsive restoration.
   .section-title { display: block; }
   .section-title p { margin-top: 6px !important; }
   .path-control .button { width: 100%; }
+}
+
+/*
+Current-session, full-canvas workspace.
+
+- Use almost the complete browser width so large review graphs and forms remain
+  readable on production monitors, including Windows displays with scaling.
+- Center application identity, page headings, progress, run status and primary
+  actions while preserving left alignment inside forms, tables and inspectors.
+- Restrict status and accent colours to blue, pink and purple; shape and text still
+  communicate state for users who cannot distinguish colour.
+- Animate explicit interaction feedback without moving content for users who ask
+  the operating system to reduce motion.
+*/
+
+html[data-theme="pink"] {
+  --accent: #d43d92;
+  --accent-hover: #b82e7a;
+  --accent-soft: #fff0f8;
+  --accent-border: #f0b8d8;
+}
+
+.theme-choice[data-theme-option="pink"] { --swatch: #d43d92; }
+.workspace { width: 100%; min-width: 0; }
+.workspace > .page-heading,
+.workspace > .notice,
+.workspace > .stage-panel,
+.workspace > .progress-card,
+.workspace > .run-log-panel,
+.workspace > .workspace-footer {
+  width: calc(100% - 32px);
+  max-width: none;
+  margin-inline: auto;
+}
+
+.topbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr);
+  width: 100%;
+  padding-inline: 20px;
+}
+.topbar-start { display: flex; justify-content: flex-start; }
+.app-identity { justify-self: center; }
+.topbar-actions { justify-self: end; }
+.page-heading { justify-content: center; text-align: center; }
+.page-heading > div { margin-inline: auto; }
+.page-heading p { margin-inline: auto; }
+.revision-pill { position: absolute; right: 24px; }
+.analysis-layout,
+.generation-grid { width: 100%; max-width: none; }
+.panel-heading,
+.section-title,
+.progress-heading,
+.run-log-heading,
+.stage-footer,
+.form-footer,
+.result-panel { text-align: center; }
+.panel-heading > p,
+.section-title > p { margin-inline: auto; }
+.progress-heading,
+.run-log-heading { justify-content: center; position: relative; }
+.progress-heading .badge,
+.run-log-heading .badge { position: absolute; right: 0; }
+.stage-footer,
+.form-footer,
+.button-row { justify-content: center; }
+.field,
+.advanced-settings,
+.table-scroll,
+.inspector,
+.findings-list,
+.run-log-preview,
+.generation-settings { text-align: left; }
+
+.notice { border-color: #d9cdf7; background: #f5f2ff; color: #5937b5; }
+.notice-warning { border-color: #efc4dc; background: #fff0f8; color: #96306e; }
+.notice-error { border-color: #efbfd3; background: #fff0f6; color: #a32661; }
+.badge { background: #f2efff; color: #5b3aba; }
+.badge.warning { background: #fff0f8; color: #96306e; }
+.badge.error { background: #fff0f6; color: #a32661; }
+.connection-status[data-state="online"] i,
+.save-state i { background: #7554d2; }
+.step-button.is-complete .step-number,
+.local-summary-note svg,
+.readiness-line { color: #6847c7; }
+.readiness-line { background: #f2efff; }
+.proposed-review { border-color: #efc4dc; background: #fff0f8; }
+.proposed-row { border-color: #f2d5e5; }
+.result-ready-badge { background: linear-gradient(135deg, #5a65e8, #c83f9c); }
+
+.button,
+.icon-button,
+.text-button,
+.step-button,
+.theme-choice {
+  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease,
+              border-color 150ms ease, color 150ms ease, opacity 150ms ease;
+}
+.button:not(:disabled):hover,
+.icon-button:not(:disabled):hover,
+.text-button:not(:disabled):hover { transform: translateY(-1px); }
+.button:not(:disabled):active,
+.icon-button:not(:disabled):active,
+.text-button:not(:disabled):active,
+.step-button:not(:disabled):active { transform: translateY(1px) scale(.975); }
+.button-primary:not(:disabled):hover { box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 28%, transparent); }
+.button.is-loading { cursor: progress; }
+.spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: inline-block;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: da-spin .7s linear infinite;
+}
+.button-primary .spinner { border-color: #ffffff88; border-right-color: #ffffff; }
+@keyframes da-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 800px) {
+  .workspace > .page-heading,
+  .workspace > .notice,
+  .workspace > .stage-panel,
+  .workspace > .progress-card,
+  .workspace > .run-log-panel,
+  .workspace > .workspace-footer { width: calc(100% - 20px); }
+  .topbar { grid-template-columns: auto 1fr auto; padding-inline: 10px; }
+  .current-project,
+  .topbar-start .text-button { font-size: 0; }
+  .topbar-start .text-button svg { width: 18px; height: 18px; }
+  .revision-pill { position: static; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .icon-button,
+  .text-button,
+  .step-button,
+  .theme-choice { transition: none; }
+  .spinner { animation-duration: 1.4s; }
 }

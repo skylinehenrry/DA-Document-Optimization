@@ -52,7 +52,7 @@ class AzureAuthenticationTests(unittest.TestCase):
             return lambda: "cached-token"
 
         with patch.dict(sys.modules, fake_modules(Credential, AzureModel, token_provider)):
-            model = set_up_LLM("OpenAI", authentication_timeout = 17)
+            model = set_up_LLM("AzureOpenAI", authentication_timeout = 17)
 
         self.assertIsInstance(model, AzureModel)
         self.assertEqual(events[0], ("credential", {"timeout": 17}))
@@ -81,9 +81,29 @@ class AzureAuthenticationTests(unittest.TestCase):
 
         with patch.dict(sys.modules, fake_modules(Credential, AzureModel, token_provider)):
             with self.assertRaisesRegex(TimeoutError, "sign-in timed out"):
-                set_up_LLM("OpenAI", authentication_timeout = 10)
+                set_up_LLM("AzureOpenAI", authentication_timeout = 10)
 
         self.assertFalse(model_constructed)
+
+
+class DirectOpenAITests(unittest.TestCase):
+    def test_openai_uses_api_key_client_without_azure_authentication(self):
+        captured = {}
+
+        class OpenAIModel:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        module = ModuleType("langchain_openai")
+        module.ChatOpenAI = OpenAIModel
+        with patch.dict(sys.modules, {"langchain_openai": module}), patch.dict(
+            "os.environ",
+            {"OPENAI_MODEL": "configured-openai-model"},
+        ):
+            model = set_up_LLM("OpenAI")
+
+        self.assertIsInstance(model, OpenAIModel)
+        self.assertEqual(captured, {"model": "configured-openai-model", "temperature": 0})
 
 
 if __name__ == "__main__":

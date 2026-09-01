@@ -41,9 +41,9 @@ The launcher does not install packages or download models automatically. No fron
 
 The interface restores the original DA Document Generator style: a simple full-width header, centred numbered sections, thin blue-gray dividers, outlined controls, a horizontal progress tracker, a compact run log and clear output actions. The current Analyze → Review → Generate process remains separate underneath that familiar appearance, so a user still corrects and saves the graph before summaries or interactive output are attached.
 
-Choose **App settings → Appearance → Accent theme** to switch between **Blue** (default), **Violet** and **Graphite**. The choice applies immediately, survives reloads in the same browser profile/address, and stays in sync across tabs. It changes the app interface only, not saved graphs or previously generated HTML files. If browser storage is unavailable, the chosen theme still works for the current page and the settings explain that it cannot be saved.
+Choose **Settings → Appearance → Accent theme** to switch between **Blue** (default), **Violet** and **Pink**. The choice applies immediately within the current launcher session. It changes the app interface only, not graph data or previously generated HTML files.
 
-Open the saved-workflow library from the folder button in the top bar and close it with its close button or Escape. The same drawer is used on desktop and narrow screens so the working canvas keeps the full page width. Forms reflow on smaller screens, and the inspector moves below the diagram. See [frontend design notes](docs/frontend-design.md) for palette tokens, comment conventions and validation details.
+The interface uses the full available browser width. Headings, progress and primary actions are centered, while forms, evidence and inspectors remain left aligned for readability. Forms reflow on smaller screens, and the inspector moves below the diagram. See [frontend design notes](docs/frontend-design.md) for palette tokens, comment conventions and validation details.
 
 ## Analyze, review and generate
 
@@ -53,9 +53,9 @@ Open the saved-workflow library from the folder button in the top bar and close 
 4. Use **Review → Findings** and **Source files** to check coverage. Findings are grouped by cause, with the original source locations available on expansion. A file that needs dependency review is different from a file that failed analysis.
 5. Correct the draft under **Diagram**. Drag cards to reposition them; drag the background to pan. Use the wheel or zoom controls and **Fit** to navigate. Select a card or arrow to inspect it. Use **Add node** or **Add connection** for missing items, and change a connection's source/destination in the inspector to reconnect it. Remove incorrect items and confirm or reject proposed connections.
 6. Choose **Save changes** to create a saved revision. **Undo**, **Redo** and **Discard** apply to your local edits. Generation uses a saved revision, so finish saving before proceeding.
-7. Choose **Generate Flow Chart**. Local English descriptions are the default. Enable AI summaries only if you want the saved source text sent to the selected provider. When finished, choose **Open flowchart** to view it or **Download HTML** to save a standalone interactive file.
+7. Choose **Generate Flow Chart**. Model summaries are enabled in a new session and create both per-script descriptions and an overall project summary. Select OpenAI, Azure OpenAI or Ollama, or clear **Enhance summaries with AI** to use local English descriptions. When finished, choose **Open flowchart** or **Download HTML**.
 
-Use the saved-workflow library to reopen work. A new analysis creates a separate draft: it never overwrites a previously reviewed graph. Generating again adds a new result without changing the saved connections. Changes to source files, or improvements to the analyzer, require a fresh analysis if you want them reflected in the draft.
+Every launcher invocation starts a fresh interface and Activity list. Reloading the same launcher URL retains its current recovery state, but running the command file again does not show earlier runs. Private revision data remains available to the backend for integrity and interruption recovery. Generating again from the current session replaces the project-named public HTML file without changing reviewed connections.
 
 Script and file cards display the filename and extension, such as `load.sql` or `report.py`. Full paths remain available in the inspector/tooltip and saved graph. Files with the same name in different folders keep distinct identities; shortening a label does not merge them.
 
@@ -63,7 +63,7 @@ The default direct-dependency view groups repeated connections between the same 
 
 ### Editing and recovery
 
-Unsaved diagram changes are kept in browser storage when storage is available. Returning with the same browser profile and site address can recover them. This is a convenience copy, not a substitute for **Save changes**: clearing site data, using another browser, or a storage quota failure can remove it. Export unsaved edits if the app reports a recovery-storage problem.
+Unsaved diagram changes are kept under the current launcher session when browser storage is available. Reloading that exact session URL can recover them. Starting the command file again intentionally creates a new session. This is a convenience copy, not a substitute for **Save changes**.
 
 If another tab or operation has saved a newer revision, the app will not overwrite it with stale edits. Download your unsaved changes if needed, reload the current revision, and review what should be reapplied. Generation cannot quietly discard pending local edits.
 
@@ -73,7 +73,8 @@ The optional `.drawio` exchange remains available. Download the draft, edit it i
 
 | Situation | What happens / what to do |
 | --- | --- |
-| Browser closes or reloads | Accepted jobs continue. Reopen the application to recover saved progress and results. |
+| Browser reloads | The same session reconnects to its accepted jobs and browser recovery state. |
+| Browser closes, then the launcher is run again | Accepted backend work can continue, but the new interface starts with an empty Activity list as requested. |
 | Launcher command window closes | A backend started by the new launcher continues separately. |
 | Computer restarts or the backend is force-closed | Reopen the launcher. Saved drafts and completed results remain. Queued jobs that never started can proceed; unfinished running work is marked **Interrupted** unless its saved result can be recovered. |
 | **Interrupted** or failed operation | Inspect the error and saved draft before choosing **Retry operation**. An interrupted model request may already have incurred a charge, so it is not automatically repeated. |
@@ -91,7 +92,7 @@ A manually started `python -m uvicorn backend.app:app --host 127.0.0.1 --port 80
 - **Proposed** connections need confirmation. They remain visually distinct if you explicitly choose to include them. Warnings do not automatically block generation; proposals and analysis errors do unless you review and explicitly accept them.
 - **Local descriptions** mean no model summaries were requested. **Fallback** means a requested model summary was unavailable and a local English description was used instead. The reason is recorded with the summaries and displayed in the generated chart. Neither case rewrites connections.
 
-Finished flowcharts now have addresses tied to their saved draft and generation. Open the saved workflow and use **Open flowchart** or **Download HTML**, rather than an old `/api/output/...` link. Those old links are retired. If a file was moved, deleted or changed on disk, the app explains the problem; restore it or generate again from the saved revision. A reviewed graph remains saved even if a generated file is missing.
+Finished flowcharts in the current session have links tied to their private draft and generation. Use **Open flowchart** or **Download HTML**, rather than an old `/api/output/...` link. The selected output folder also contains the standalone `output/<project name>.html` deliverable. If a private integrity copy is missing or changed, generate again from the reviewed revision. The reviewed graph remains in private recovery storage even if the public HTML is moved.
 
 ## Optional AI setup
 
@@ -101,7 +102,7 @@ Install `requirements-llm.txt` in the same environment only if you want model su
 python -m pip install -r requirements-llm.txt
 ```
 
-Provider setup is isolated in `backend/model_provider.py`. The API selector `OpenAI` retains the existing **Azure OpenAI** deployment and interactive Microsoft sign-in; it does not use a newly introduced `OPENAI_API_KEY` setup. `Ollama` retains the existing local model configuration. Selecting a provider alone does not contact it.
+Provider setup is isolated in `backend/model_provider.py`. **OpenAI** uses `OPENAI_API_KEY` and optional `OPENAI_MODEL`. **Azure OpenAI** uses the existing interactive Microsoft sign-in and supports `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` and `AZURE_OPENAI_API_VERSION` overrides. **Ollama** retains the local model configuration. Selecting a provider alone does not contact it.
 
 AI suggestions add unconfirmed connections for review. AI summaries may only supply description text during generation. Source comments and attached text are treated as data, not as instructions to the model. Check the provider configuration and your data-sharing policy before opting in. Azure authentication opens at most one bounded Microsoft sign-in before parallel summaries begin. If that sign-in is closed or times out, the generation records local fallback descriptions instead of opening another login for every source file. Closing the DA Document Generator browser page does not cancel an already accepted job; use **Activity** to inspect it after reopening. Live paid model calls were not exercised for this redesign.
 
@@ -120,18 +121,13 @@ $env:DA_WORKFLOW_STORE = Join-Path $env:LOCALAPPDATA "DAFlowchartStudio\store"
 
 For future double-click launches, make `DA_WORKFLOW_STORE` a Windows user environment variable with that same local path. The app does not automatically move old saved work. Before transferring an existing store from a share, stop **all** app instances and direct CLI operations, back it up, and copy the complete private store to the chosen local folder. Do not copy an active SQLite database in isolation.
 
-Generated files are written beneath:
+The user-selected folder receives only the standalone deliverable:
 
 ```text
-<output folder>/outputs/workflows/<draft_id>/
-  revisions/<revision>/
-    draft.json, draft.drawio, draft.svg, review.json
-  generations/<generation_id>/
-    workflow_flowchart.html, workflow_graph.json,
-    summaries.json, review.json, generation_manifest.json
+<output folder>/output/<project name>.html
 ```
 
-The app serves only scoped, validated artifact links. There is no public output-folder mount. Downloaded HTML is self-contained and can be opened after the backend stops. Graphs, evidence and summaries can contain sensitive source excerpts, filenames and resource names; review them before sharing.
+Revision exports, integrity copies, summary records and manifests stay under the private application store. The app serves only scoped, validated links and never mounts the selected folder publicly. The HTML is self-contained and can be opened after the backend stops. It can contain sensitive source excerpts, filenames and resource names; review it before sharing.
 
 The [backend workflow and API guide](docs/backend-workflow.md) covers request formats, job recovery, graph semantics, command-line use, bounds and migration. The supported source extensions are `.py`, `.sql`, `.bat`, `.yxmd`, `.yxwz` and `.yxmc`. Dynamic runtime behavior, stored-procedure internals, embedded Alteryx code and full statement-level control flow still require manual review. **DOCX generation is not implemented.**
 
@@ -143,4 +139,4 @@ python -m unittest discover -s tests -v
 node --test
 ```
 
-Node is needed only for the frontend tests. Automated checks use temporary projects and mocked model responses. Browser checks verified analysis, filename-only cards, folder-name fallback, node dragging, adding/reconnecting connections, grouped removal/undo, saving, local generation and a project-named HTML download. Unsaved edits survived closing the browser page and restarting the backend. Windows path/launcher regressions and the CI matrix are included, but native Windows execution and live model responses remain unverified on this macOS host.
+Node is needed only for the frontend tests. Automated checks use temporary projects and mocked model responses. The Python suite ran 176 tests (175 passed and one native Windows test skipped on macOS), and all 25 frontend tests passed. Browser checks verified full-width layout, session isolation, analysis, local generation, project overview rendering, the scoped Open link and the single project-named public HTML file. Live model responses and native Windows execution remain unverified on this macOS host.

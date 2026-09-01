@@ -328,6 +328,19 @@ class WorkflowStore:
             return json.loads(row[0])
 
     def artifact_root(self, draft_id: str) -> Path:
+        """Return the private recovery/artifact location for one saved draft.
+
+        - Revision exports and integrity copies never appear in the user-selected
+          deliverable folder.
+        - The stable draft ID is safe here because this directory is application
+          storage rather than a user-facing project name.
+        """
+
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.:-]{0,127}", draft_id):
             raise ValueError("Invalid draft ID.")
-        return Path(self.metadata(draft_id)["output_folder"]) / "outputs" / "workflows" / draft_id
+        return self.directory / "artifacts" / draft_id
+
+    def output_root(self, draft_id: str) -> Path:
+        """Return the single user-facing output directory selected for this draft."""
+
+        return Path(self.metadata(draft_id)["output_folder"]) / "output"

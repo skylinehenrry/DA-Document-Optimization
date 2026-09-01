@@ -27,9 +27,9 @@ from .drawio import export_drawio, import_drawio
 from .graph_edits import EditRequest, apply_edits
 from .graph_diagnostics import graph_diagnostics
 from .graph_enrichment import ModelProvider, enrich_summaries, suggest_relationships
-from .graph_models import GraphDocument, NarrativeSummary, StrictModel, topology_signature, utc_now
+from .graph_models import GraphDocument, NarrativeSummary, ProjectSummary, StrictModel, topology_signature, utc_now
 from .graph_rendering import layout_graph, render_graph_html, render_graph_svg
-from .project_identity import flowchart_attachment
+from .project_identity import flowchart_attachment, flowchart_filename
 from .static_analysis import analyze_project
 from .workflow_store import RevisionConflict, WorkflowStore, json_text
 
@@ -48,7 +48,7 @@ class AnalysisRequest(StrictModel):
     working_directory: str | None = None
     sql_dialect: str | None = None
     database_namespace: str | None = None
-    model: ModelProvider = "OpenAI"
+    model: ModelProvider = "AzureOpenAI"
     language: str = Field(default = "English", min_length = 1, max_length = 100)
     max_concurrency: int = Field(default = 3, ge = 1, le = 16)
 
@@ -66,7 +66,7 @@ class GenerateRequest(StrictModel):
 
     expected_revision: int = Field(ge = 1)
     use_llm: bool = False
-    model: ModelProvider = "OpenAI"
+    model: ModelProvider = "AzureOpenAI"
     language: str = Field(default = "English", min_length = 1, max_length = 100)
     max_concurrency: int = Field(default = 3, ge = 1, le = 16)
     timeout_seconds: float = Field(default = 90, gt = 0, le = 300)
@@ -85,7 +85,7 @@ class SuggestRequest(StrictModel):
     """Bounded provider options for explicit review-only relationship proposals."""
 
     expected_revision: int = Field(ge = 1)
-    model: ModelProvider = "OpenAI"
+    model: ModelProvider = "AzureOpenAI"
     max_concurrency: int = Field(default = 3, ge = 1, le = 16)
     timeout_seconds: float = Field(default = 90, gt = 0, le = 300)
 
@@ -183,6 +183,50 @@ def _write_directory(destination: Path, files: dict[str, str]) -> None:
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
+
+
+def _publish_html(destination: Path, content: str) -> bytes | None:
+    """Atomically replace one public HTML deliverable and return its prior bytes.
+
+    - The selected folder receives only ``output/<project name>.html`` from this app.
+    - A sibling temporary file prevents a partial report after interruption.
+    - Returning the previous bytes lets generation restore an earlier good report
+      if the database transaction fails after the filesystem replacement.
+    """
+
+    destination.parent.mkdir(parents = True, exist_ok = True)
+    previous = destination.read_bytes() if destination.is_file() else None
+    handle, temporary_name = tempfile.mkstemp(prefix = ".pending-", suffix = ".html", dir = destination.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(handle, "w", encoding = "utf-8", newline = "\n") as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, destination)
+        return previous
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _restore_published_html(destination: Path, previous: bytes | None) -> None:
+    """Restore the public report after a generation that did not commit."""
+
+    if previous is None:
+        destination.unlink(missing_ok = True)
+        return
+    handle, temporary_name = tempfile.mkstemp(prefix = ".restore-", suffix = ".html", dir = destination.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(handle, "wb") as output:
+            output.write(previous)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 class WorkflowService:
@@ -301,35 +345,43 @@ class WorkflowService:
             raise ReviewRequired("Some source analysis failed. Review the issues and set acknowledge_incomplete only if you want a visibly incomplete chart.")
         signature = topology_signature(graph)
         log(f"Generating from reviewed draft {draft_id}, revision {graph.revision}; analysis will not be rerun.")
-        records = await enrich_summaries(
+        records, project_record = await enrich_summaries(
             graph, self.store.snapshots(draft_id), self.store, use_llm = request.use_llm, model = request.model,
             language = request.language, max_concurrency = request.max_concurrency,
-            timeout_seconds = request.timeout_seconds, logger = log, chain = summary_chain, provider_identity = provider_identity,
+            timeout_seconds = request.timeout_seconds, logger = log, chain = summary_chain,
+            provider_identity = provider_identity, return_project = True,
         )
         summaries = {node_id: NarrativeSummary.model_validate(record["summary"]) for node_id, record in records.items()}
         statuses = {node_id: record["status"] for node_id, record in records.items()}
+        project_summary = ProjectSummary.model_validate(project_record["summary"])
         if topology_signature(graph) != signature:
             raise ValueError("Summary enrichment changed graph topology; generation rejected.")
         log("Script summary generation complete. Rendering the reviewed graph.")
         rendered = await complete_in_thread(
             render_graph_html, graph, summaries = summaries, summary_statuses = statuses,
             summary_errors = {node_id: record["error"] for node_id, record in records.items() if record.get("error")},
+            project_summary = project_summary, project_summary_status = project_record["status"],
         )
         if topology_signature(graph) != signature:
             raise ValueError("Rendering changed graph topology; generation rejected.")
         generation_id = "generation_" + uuid.uuid4().hex
         destination = self.store.artifact_root(draft_id) / "generations" / generation_id
+        public_destination = self.store.output_root(draft_id) / flowchart_filename(graph.title)
         files = {
             "workflow_flowchart.html": rendered,
             "workflow_graph.json": graph.model_dump_json(indent = 2),
-            "summaries.json": json_text({"draft_id": draft_id, "revision": graph.revision, "source_digest": graph.source_digest, "summaries": records}),
+            "summaries.json": json_text({"draft_id": draft_id, "revision": graph.revision,
+                                          "source_digest": graph.source_digest, "project": project_record,
+                                          "summaries": records}),
             "review.json": json_text(review),
         }
         manifest = {
             "schema_version": "1.0", "generation_id": generation_id, "draft_id": draft_id,
             "revision": graph.revision, "source_digest": graph.source_digest, "created_at": utc_now(),
-            "output_directory": str(destination), "settings": request.model_dump(exclude = {"expected_revision"}),
+            "output_directory": str(public_destination.parent), "output_file": str(public_destination),
+            "settings": request.model_dump(exclude = {"expected_revision"}),
             "summary_status_counts": dict(Counter(statuses.values())),
+            "project_summary_status": project_record["status"],
             "has_analysis_warnings": review["has_warnings"], "has_analysis_errors": review["has_analysis_errors"],
             "has_proposed_edges": bool(review["proposed_edge_ids"]),
             "artifacts": {name: {"sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
@@ -338,10 +390,14 @@ class WorkflowService:
         }
         files["generation_manifest.json"] = json_text(manifest)
         writer = asyncio.create_task(asyncio.to_thread(_write_directory, destination, files))
+        previous_public = None
+        public_written = False
         try:
             # Cancelling to_thread does not stop its worker. Finish the write
             # before cleaning it up, otherwise it can recreate an orphan later.
             await asyncio.shield(writer)
+            previous_public = await complete_in_thread(_publish_html, public_destination, rendered)
+            public_written = True
             # Edits made while the model was running must not publish stale HTML
             # as the latest result. Older successful generations stay accessible.
             await complete_in_thread(self.store.record_generation, draft_id, graph.revision, manifest,
@@ -365,8 +421,10 @@ class WorkflowService:
                 committed = False
             if not committed and destination.exists():
                 shutil.rmtree(destination)
+            if not committed and public_written:
+                _restore_published_html(public_destination, previous_public)
             raise
-        log(f"Generation complete. All {len(graph.edges)} reviewed edges preserved in revision {graph.revision}.")
+        log(f"Generation complete: {public_destination}")
         return manifest
 
     def describe(self, graph: GraphDocument, *, generation_id: str | None = None) -> dict:
@@ -396,7 +454,7 @@ class WorkflowService:
                 export_warning = "The revision is saved, but local draft exports are unavailable. Download from the draft API or retry export."
         return {"draft_id": graph.id, "revision": graph.revision, "status": "generated" if generation else "draft",
                 "title": graph.title, "project_root": graph.project_root,
-                "output_folder": str(self.store.artifact_root(graph.id)), "settings": self.store.metadata(graph.id)["settings"],
+                "output_folder": str(self.store.output_root(graph.id)), "settings": self.store.metadata(graph.id)["settings"],
                 "graph": graph.model_dump(), "review": review_report(graph), "outputs": outputs,
                 "generation": generation, "export_warning": export_warning,
                 "message": "Draft ready for review." if not generation else "Flowchart generated from the reviewed revision."}

@@ -53,7 +53,7 @@ class JobFixture:
         self.repository = JobRepository(self.service.store)
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
-        self.provider = self.stack.enter_context(patch("backend.graph_enrichment.create_chain",
+        self.provider = self.stack.enter_context(patch("backend.graph_enrichment.create_provider",
                                                       side_effect = AssertionError("No live model calls in app tests")))
 
     def payload(self):
@@ -88,6 +88,20 @@ class JobFixture:
 
 
 class WorkflowJobAPITests(JobFixture, unittest.TestCase):
+    def test_job_history_is_filtered_by_launcher_session(self):
+        client = self.open_client()
+        first_session = uuid4()
+        second_session = uuid4()
+        first = self.request().model_copy(update = {"session_id": first_session})
+        second = self.request().model_copy(update = {"session_id": second_session})
+        first_job = self.submit(client, first)
+        second_job = self.submit(client, second)
+
+        first_rows = client.get(f"/api/jobs?summary=true&session_id={first_session}").json()
+        second_rows = client.get(f"/api/jobs?summary=true&session_id={second_session}").json()
+        self.assertEqual([row["id"] for row in first_rows], [first_job["id"]])
+        self.assertEqual([row["id"] for row in second_rows], [second_job["id"]])
+
     def test_project_name_is_optional_trimmed_and_does_not_rename_saved_drafts(self):
         client = self.open_client()
         previous = None

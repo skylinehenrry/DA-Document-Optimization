@@ -406,7 +406,7 @@ def export_drawio(graph: GraphDocument) -> str:
         ET.SubElement(cell, "mxGeometry", {"x": str(x), "y": str(y), "width": str(NODE_WIDTH), "height": str(NODE_HEIGHT), "as": "geometry"})
     for edge in graph.edges:
         wrapper = ET.SubElement(root, "object", {"id": edge.id, "label": _edge_display_label(edge), "daKind": edge.kind, "daStatus": edge.status})
-        colour = "#b45309" if edge.status == "proposed" else "#475569"
+        colour = "#c43f91" if edge.status == "proposed" else "#5266bd"
         dashed = "dashed=1;dashPattern=8 5;" if edge.status == "proposed" else "dashed=0;"
         cell = ET.SubElement(wrapper, "mxCell", {
             "edge": "1", "parent": "1", "source": edge.source, "target": edge.target,

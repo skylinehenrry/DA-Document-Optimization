@@ -49,7 +49,7 @@ class WorkflowAPITests(unittest.TestCase):
         self.output = self.root / "documents"
         self.service = WorkflowService(WorkflowStore(self.root / "store"))
         self.app = api.create_app(self.service)
-        deny_provider = patch("backend.graph_enrichment.create_chain", side_effect = AssertionError("Tests must not call live models"))
+        deny_provider = patch("backend.graph_enrichment.create_provider", side_effect = AssertionError("Tests must not call live models"))
         self.provider = deny_provider.start()
         self.addCleanup(deny_provider.stop)
         self.client = TestClient(self.app, base_url = "http://127.0.0.1")

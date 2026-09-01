@@ -74,6 +74,20 @@ class LauncherTests(unittest.TestCase):
             start.assert_not_called()
             browser.assert_not_called()
 
+    def test_browser_opens_directly_with_a_new_launcher_session(self):
+        session_id = "11111111-1111-4111-8111-111111111111"
+        with patch("launch.existing_server", return_value = self.health()), \
+                patch("launch.launch_server") as start, \
+                patch("launch.uuid4", return_value = session_id), \
+                patch("launch.webbrowser.open") as browser, \
+                patch("sys.stdout", new_callable = io.StringIO):
+            self.assertEqual(launch.main(["--port", "8765"]), 0)
+
+        start.assert_not_called()
+        browser.assert_called_once_with(
+            f"http://127.0.0.1:8765/frontend/index.html?session={session_id}"
+        )
+
     def test_legacy_console_encoding_does_not_hide_unicode_startup_errors(self):
         stdout_bytes, stderr_bytes = io.BytesIO(), io.BytesIO()
         stdout = io.TextIOWrapper(stdout_bytes, encoding = "cp1252", errors = "strict")

@@ -115,6 +115,16 @@ asyncio.run(main())
             args = parser().parse_args(["analyze", str(project), str(Path(directory) / "reports")])
             self.assertIsNone(args.title)
 
+    def test_cli_accepts_every_supported_summary_provider(self):
+        # - Keep the command-line provider list aligned with the browser and API.
+        # - Parsing these options must not import a provider or start authentication.
+        for provider in ("OpenAI", "AzureOpenAI", "Ollama"):
+            with self.subTest(provider = provider):
+                args = parser().parse_args([
+                    "generate", "draft_example", "--revision", "1", "--model", provider,
+                ])
+                self.assertEqual(args.model, provider)
+
     def test_selected_symlink_folder_name_is_preserved_for_display(self):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "Physical source"

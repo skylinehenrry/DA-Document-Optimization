@@ -2,6 +2,8 @@
 
 - Uses only the standard library, so missing application packages can be explained.
 - Starts one detached local server; closing the launcher does not interrupt work.
+- Opens each launcher invocation with a new browser-session identifier so previous
+  run history and draft navigation do not reappear in the new workspace.
 - Checks application identity and project location before reusing a listening port.
 - Opens the browser only after the correct server reports that it is ready.
 - Keeps startup errors in the private store instead of losing a command window.
@@ -21,6 +23,7 @@ import sys
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from uuid import uuid4
 import webbrowser
 
 
@@ -306,7 +309,10 @@ def main(arguments: list[str] | None = None) -> int:
         print("You can close this window. The backend keeps running and saves work independently.")
         print("Use Settings > Stop server in the app, or run this launcher with --stop, when finished.")
         if not args.no_browser:
-            webbrowser.open(base_url)
+            session_id = uuid4()
+            # - Open the document directly so a framework redirect cannot discard
+            #   the launcher session query string before the browser reads it.
+            webbrowser.open(f"{base_url}/frontend/index.html?session={session_id}")
         return 0
     except (LaunchError, OSError, ValueError) as error:
         print(str(error), file = sys.stderr)

@@ -128,81 +128,14 @@
     <a class="skip-link" href="#mainContent">
       Skip to workspace
     </a>
-    <!--
-    Saved workflow navigation.
-    - The backend owns the saved revisions; app.js fills the list from durable data.
-    - Preserve IDs and data attributes because the controller binds to them.
-    -->
-    <aside class="library-sidebar" id="librarySidebar" aria-label="Saved workflow library">
-      <div class="library-brand-row">
-    <button class="brand" id="brandHome" type="button">
-        <span class="brand-mark">
-          <svg aria-hidden="true">
-            <use href="#i-flow"/>
-          </svg>
-        </span>
-        <span>
-          <strong>
-            DA Document Generator
-          </strong>
-          <small>
-            Saved workflow library
-          </small>
-        </span>
-      </button>
-        <button class="icon-button mobile-menu" id="closeLibrary" type="button" aria-label="Close workflow library">
-        <svg aria-hidden="true"><use href="#i-close"/></svg>
-      </button>
-    </div>
-    <button class="button button-primary new-analysis" id="newAnalysisButton" type="button">
-        <svg aria-hidden="true">
-          <use href="#i-plus"/>
-        </svg>
-        New analysis
-      </button>
-      <div class="library-heading">
-        <h2>
-          Saved workflows
-        </h2>
-        <button class="icon-button" id="refreshLibrary" type="button" aria-label="Refresh saved workflows">
-          <svg aria-hidden="true">
-            <use href="#i-refresh"/>
-          </svg>
-        </button>
-      </div>
-      <label class="search-control library-search">
-        <svg aria-hidden="true">
-          <use href="#i-search"/>
-        </svg>
-        <input id="librarySearch" type="search" placeholder="Find a workflow" aria-label="Find a saved workflow">
-      </label>
-      <nav id="draftList" class="draft-list" aria-label="Saved workflows">
-        <p class="library-empty">
-          Connecting to your saved workflows…
-        </p>
-      </nav>
-      <div class="sidebar-footer">
-        <p>
-          <svg aria-hidden="true">
-            <use href="#i-shield"/>
-          </svg>
-          <span>
-            Saved on this computer
-            <small>
-              Drafts stay when you close the browser.
-            </small>
-          </span>
-        </p>
-        <button class="text-button" id="settingsButton" type="button">
-          <svg aria-hidden="true">
-            <use href="#i-settings"/>
-          </svg>
-          App settings
-        </button>
-      </div>
-    </aside>
     <main class="workspace" id="mainContent">
       <div class="topbar">
+        <div class="topbar-start">
+          <button class="text-button" id="newAnalysisButton" type="button">
+            <svg aria-hidden="true"><use href="#i-plus"/></svg>
+            New analysis
+          </button>
+        </div>
         <div class="app-identity">
           <span class="app-identity-mark" aria-hidden="true">
             <svg>
@@ -217,12 +150,6 @@
           </span>
         </div>
         <div class="topbar-actions">
-          <button class="text-button library-toggle" id="toggleLibrary" type="button" aria-label="Toggle saved workflow library" aria-expanded="false">
-            <svg aria-hidden="true">
-              <use href="#i-folder"/>
-            </svg>
-            Saved workflows
-          </button>
           <span class="connection-status" id="connectionStatus" role="status">
             <i>
             </i>
@@ -236,6 +163,10 @@
             <span class="activity-count" id="activityCount" hidden>
             </span>
           </button>
+          <button class="text-button" id="settingsButton" type="button">
+            <svg aria-hidden="true"><use href="#i-settings"/></svg>
+            Settings
+          </button>
         </div>
       </div>
       <header class="page-heading">
@@ -244,10 +175,10 @@
             WORKFLOW STUDIO
           </p>
           <h1 id="projectTitle">
-            Create a workflow.
+            Project analysis
           </h1>
           <p id="projectSubtitle">
-            Understand your project. Refine the connections. Share the result.
+            Select the source and output folders to begin.
           </p>
         </div>
         <span class="revision-pill" id="revisionPill" hidden>
@@ -262,7 +193,7 @@
             Connection paused
           </strong>
           <p id="connectionMessage">
-            Reopen the launcher if the local server was stopped. Saved drafts and browser edits are retained.
+            Reopen the launcher if the local server was stopped. A new launch starts a fresh session.
           </p>
         </div>
         <button class="button button-small" id="reconnectButton" type="button">
@@ -336,7 +267,7 @@
                   </button>
                 </span>
                 <small>
-                  Each draft and generation gets its own folder.
+                  Creates output/&lt;project name&gt;.html. Recovery data stays in private app storage.
                 </small>
               </label>
               <details class="advanced-settings">
@@ -386,143 +317,7 @@
               </div>
             </form>
           </div>
-          <aside class="analysis-explainer">
-            <div class="workflow-preview" aria-hidden="true">
-              <div class="preview-heading">
-                <span>
-                  FROM SOURCE TO FLOWCHART
-                </span>
-                <svg aria-hidden="true">
-                  <use href="#i-flow"/>
-                </svg>
-              </div>
-              <div class="preview-node">
-                <svg aria-hidden="true">
-                  <use href="#i-code"/>
-                </svg>
-                <div>
-                  <strong>
-                    Your source files
-                  </strong>
-                  <small>
-                    One project. Multiple languages.
-                  </small>
-                </div>
-              </div>
-              <div class="preview-connector">
-                <svg aria-hidden="true">
-                  <use href="#i-arrow"/>
-                </svg>
-              </div>
-              <div class="preview-node">
-                <svg aria-hidden="true">
-                  <use href="#i-flow"/>
-                </svg>
-                <div>
-                  <strong>
-                    A draft you can edit
-                  </strong>
-                  <small>
-                    Review, reconnect and arrange.
-                  </small>
-                </div>
-              </div>
-              <div class="preview-connector">
-                <svg aria-hidden="true">
-                  <use href="#i-arrow"/>
-                </svg>
-              </div>
-              <div class="preview-node">
-                <svg aria-hidden="true">
-                  <use href="#i-sparkles"/>
-                </svg>
-                <div>
-                  <strong>
-                    A flowchart ready to share
-                  </strong>
-                  <small>
-                    Interactive. Self-contained. Yours.
-                  </small>
-                </div>
-              </div>
-            </div>
-            <h2>
-              Clarity, one connection at a time.
-            </h2>
-            <p>
-              Start with a draft grounded in your source code. Make it accurate before making it presentable.
-            </p>
-            <div class="format-tags" aria-label="Supported source types">
-              <span>
-                <svg aria-hidden="true">
-                  <use href="#i-code"/>
-                </svg>
-                Python
-              </span>
-              <span>
-                <svg aria-hidden="true">
-                  <use href="#i-database"/>
-                </svg>
-                SQL
-              </span>
-              <span>
-                <svg aria-hidden="true">
-                  <use href="#i-terminal"/>
-                </svg>
-                BAT
-              </span>
-              <span>
-                <svg aria-hidden="true">
-                  <use href="#i-flow"/>
-                </svg>
-                Alteryx
-              </span>
-            </div>
-            <ul class="benefit-list">
-              <li>
-                <svg aria-hidden="true">
-                  <use href="#i-search"/>
-                </svg>
-                <div>
-                  <strong>
-                    Trace it to the source
-                  </strong>
-                  <p>
-                    Inspect the evidence behind each connection.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <svg aria-hidden="true">
-                  <use href="#i-check"/>
-                </svg>
-                <div>
-                  <strong>
-                    Keep your corrections
-                  </strong>
-                  <p>
-                    Generation adds context without changing your graph.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <svg aria-hidden="true">
-                  <use href="#i-shield"/>
-                </svg>
-                <div>
-                  <strong>
-                    Work at your own pace
-                  </strong>
-                  <p>
-                    Saved revisions stay here when you close the browser.
-                  </p>
-                </div>
-              </li>
-            </ul>
-            <p class="scope-note">
-              Maps dependencies and explicit workflow wiring. Dynamic paths and individual code branches may need manual review.
-            </p>
-          </aside>
+
         </div>
       </section>
       <!--
@@ -950,24 +745,24 @@
                 3. Generate Flow Chart
               </h2>
               <p>
-                We’ll add script summaries and interactions to the saved diagram.
+                Attach individual and project summaries, then render the saved diagram as interactive HTML.
               </p>
             </div>
             <div id="generationReadiness">
             </div>
             <form id="generationForm" class="stack-form">
               <label class="option-card">
-                <input id="useLlmSummaries" type="checkbox">
+                <input id="useLlmSummaries" type="checkbox" checked>
                 <span>
                   <strong>
                     Enhance summaries with AI
                   </strong>
                   <small>
-                    Optional. Sends saved source text to the selected provider. Azure may open one bounded Microsoft sign-in; closing this page does not cancel an accepted job. Connections stay unchanged.
+                    Uses the selected provider for each script summary and a project-level summary. Graph connections remain exactly as reviewed.
                   </small>
                 </span>
               </label>
-              <div id="providerFields" class="provider-fields" hidden>
+              <div id="providerFields" class="provider-fields">
                 <div class="two-columns">
                   <label class="field">
                     <span>
@@ -975,7 +770,10 @@
                     </span>
                     <select id="model">
                       <option value="OpenAI">
-                        OpenAI / configured Azure
+                        OpenAI
+                      </option>
+                      <option value="AzureOpenAI" selected>
+                        Azure OpenAI
                       </option>
                       <option value="Ollama">
                         Ollama · local model
@@ -1140,7 +938,7 @@
           Appearance
         </h3>
         <p>
-          A little colour, your way. Your choice is saved in this browser and applies to the app interface.
+          Choose a blue, pink or purple accent for this session.
         </p>
         <fieldset id="themeOptions" class="theme-options">
           <legend>
@@ -1168,12 +966,12 @@
               <use href="#i-check"/>
             </svg>
           </label>
-          <label class="theme-choice" data-theme-option="graphite">
-            <input type="radio" name="accentTheme" value="graphite">
+          <label class="theme-choice" data-theme-option="pink">
+            <input type="radio" name="accentTheme" value="pink">
             <span class="theme-swatch" aria-hidden="true">
             </span>
             <span>
-              Graphite
+              Pink
             </span>
             <svg aria-hidden="true">
               <use href="#i-check"/>
@@ -1192,7 +990,7 @@
           Safe to close the browser
         </h3>
         <p>
-          Jobs continue while the local server is running. Reopening the launcher brings you back to your saved workflows. Unsubmitted edits are kept in this browser.
+          This panel shows only the current launcher session. Accepted jobs continue while the local server is running.
         </p>
         <p>
           After an unexpected server stop, unfinished jobs are marked interrupted. Review their status before choosing Retry.
@@ -1212,7 +1010,7 @@
           Stop server
         </button>
         <p class="quiet-note">
-          Saved drafts remain. Use the launcher to restart the server. Stopping is unavailable while jobs are active.
+          Run the launcher again to start a fresh session. Stopping is unavailable while jobs are active.
         </p>
       </div>
     </dialog>

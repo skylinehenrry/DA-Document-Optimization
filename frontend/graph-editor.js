@@ -15,7 +15,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 // - These dimensions match draw.io and final HTML, preserving reviewed spacing.
 const CARD_WIDTH = 300;
 const CARD_HEIGHT = 82;
-const COLORS = {python: "#3566a2", sql: "#8a61ac", alteryx: "#107c94", bat: "#987236", script: "#3566a2", file: "#517568", table: "#8a61ac", database: "#8a61ac", process: "#227c79", decision: "#aa7934", module: "#76818c", api: "#227c79", unknown: "#76818c"};
+const COLORS = {python: "#3566a2", sql: "#8054c7", alteryx: "#a04fb3", bat: "#566dca", script: "#3566a2", file: "#7b63bf", table: "#8054c7", database: "#6853c5", process: "#4e68cb", decision: "#c43f91", module: "#7d66bd", api: "#4967c8", unknown: "#76818c"};
 const LABELS = {python: "PYTHON", sql: "SQL", alteryx: "ALTERYX", bat: "BATCH", script: "SCRIPT", file: "FILE", table: "TABLE", database: "DATABASE", process: "PROCESS", decision: "DECISION", module: "MODULE", api: "API", unknown: "NODE"};
 
 function svgElement(name, attributes = {}, text = null) {
@@ -221,9 +221,9 @@ export class GraphEditor {
     const fragment = document.createDocumentFragment();
     const defs = svgElement("defs");
     // - Arrowheads follow the selected accent through CSS custom properties.
-    // - Proposed edges retain semantic amber in every theme.
+    // - Proposed edges retain semantic pink in every theme.
     // - This is a visual change only; endpoint IDs and direction stay untouched.
-    for (const [name, color] of [["normal", "#8c96a5"], ["selected", "var(--accent)"], ["proposed", "var(--amber)"]]) {
+    for (const [name, color] of [["normal", "#8c96a5"], ["selected", "var(--accent)"], ["proposed", "var(--review)"]]) {
       const marker = svgElement("marker", {id: `arrow-${name}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse", markerUnits: "userSpaceOnUse"});
       marker.append(svgElement("path", {d: "M 1 1 L 9 5 L 1 9 Z", fill: color}));
       defs.append(marker);

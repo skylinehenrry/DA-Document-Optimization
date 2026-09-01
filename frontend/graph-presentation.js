@@ -4,7 +4,7 @@ Readable labels and grouped connections, without changing the saved graph.
 - Treat both POSIX and Windows separators as path separators for display only.
 - Keep canonical identifiers, evidence and every raw relationship unchanged.
 - Group imports/calls/dependencies between the same code nodes into one arrow.
-- Preserve direction and show amber dashes if any grouped member is unconfirmed.
+- Preserve direction and show pink dashes if any grouped member is unconfirmed.
 - Never remove an explicit connection merely because an indirect route exists.
 */
 

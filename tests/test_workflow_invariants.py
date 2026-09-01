@@ -22,6 +22,7 @@ from unittest.mock import patch
 
 from backend.graph_edits import EditRequest, apply_edits
 from backend.graph_models import Evidence, GraphDocument, GraphEdge, GraphIssue, GraphNode, NarrativeSummary, SourceFile, topology_signature
+from backend.project_identity import flowchart_filename
 from backend.workflow_service import GenerateRequest, ReviewRequired, SuggestRequest, WorkflowService, _write_directory
 from backend.workflow_store import RevisionConflict, WorkflowStore
 
@@ -309,9 +310,21 @@ class WorkflowGenerationInvariantTests(WorkflowFixture, unittest.IsolatedAsyncio
         self.assertEqual(self.store.load(self.graph.id), edited)
 
     async def test_offline_generation_does_not_initialize_a_model(self):
-        with patch("backend.graph_enrichment.create_chain", side_effect = AssertionError("No model should be initialized")):
+        with patch("backend.graph_enrichment.create_provider", side_effect = AssertionError("No model should be initialized")):
             manifest = await self.service.generate(self.graph.id, GenerateRequest(expected_revision = 1))
         self.assertEqual(manifest["summary_status_counts"], {"deterministic": 1})
+
+    async def test_public_output_contains_only_one_project_named_html_file(self):
+        manifest = await self.service.generate(self.graph.id, GenerateRequest(expected_revision = 1))
+        output = self.output.resolve() / "output"
+        files = sorted(path.name for path in output.iterdir())
+
+        filename = flowchart_filename(self.graph.title)
+        self.assertEqual(files, [filename])
+        self.assertEqual(Path(manifest["output_directory"]), output)
+        self.assertEqual(Path(manifest["output_file"]), output / filename)
+        self.assertIn("Project overview", (output / filename).read_text(encoding = "utf-8"))
+        self.assertFalse((self.output / "outputs").exists())
 
     async def test_failed_analysis_requires_explicit_incomplete_acknowledgment(self):
         failed = self.graph.model_copy(deep = True)

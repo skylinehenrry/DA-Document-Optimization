@@ -21,30 +21,30 @@
       --python-accent: #2f6bff;
       --sql-chip: #f0ecff;
       --sql-accent: #7357d9;
-      --alteryx-chip: #fff1e8;
-      --alteryx-accent: #d66a2a;
-      --bat-chip: #eef2f7;
-      --bat-accent: #596579;
+      --alteryx-chip: #f7edff;
+      --alteryx-accent: #9c4dcc;
+      --bat-chip: #edf2ff;
+      --bat-accent: #536dc7;
       --markdown-chip: #f3ecff;
       --markdown-accent: #8a4fe8;
       --json-chip: #fdecf5;
       --json-accent: #e83e8c;
-      --csv-chip: #e8f7f4;
-      --csv-accent: #0f8f7b;
-      --excel-chip: #eaf7ef;
-      --excel-accent: #2e8b57;
-      --database-chip: #e7f6f8;
-      --database-accent: #007a8a;
+      --csv-chip: #fcecf8;
+      --csv-accent: #c13f91;
+      --excel-chip: #f2edff;
+      --excel-accent: #7454d4;
+      --database-chip: #edf1ff;
+      --database-accent: #4d66c5;
       --table-chip: #f0ecff;
       --table-accent: #7357d9;
-      --html-chip: #fff0e8;
-      --html-accent: #e85d2a;
+      --html-chip: #fcecf8;
+      --html-accent: #d44892;
       --log-chip: #f1f4f8;
       --log-accent: #718096;
       --file-chip: #f3f5f8;
       --file-accent: #8a94a6;
-      --folder-chip: #fff7de;
-      --folder-accent: #c98a00;
+      --folder-chip: #f4edff;
+      --folder-accent: #8b52d1;
       --api-chip: #e8f2ff;
       --api-accent: #005eb8;
       --unknown-chip: #f3f5f8;
@@ -173,10 +173,28 @@
     .view-controls button { font: inherit; }
     .view-controls select:focus-visible,
     .view-controls button:focus-visible { outline: 2px solid #275dad; outline-offset: 2px; }
+    .project-overview {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border: 1px solid #d9d7f5;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #f1f5ff, #fbf0fa);
+      color: #344054;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .project-overview summary { color: #5139a8; font-weight: 800; cursor: pointer; }
+    .project-overview summary span { margin-left: 8px; color: #8b4caa; font-size: 10px; font-weight: 700; }
+    .project-overview p { margin: 10px 0 0; white-space: pre-wrap; }
+    .project-overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+    .project-overview-grid section { padding: 9px 11px; border-radius: 8px; background: #ffffffa8; }
+    .project-overview-grid h3 { margin: 0 0 5px; color: #344054; font-size: 11px; }
+    .project-overview-grid ul { margin: 0; padding-left: 18px; }
     @media (max-width: 680px) {
       header { padding: 15px; }
       .header-top { flex-wrap: wrap; gap: 12px; }
       h1 { font-size: 21px; overflow-wrap: anywhere; }
+      .project-overview-grid { grid-template-columns: 1fr; }
     }
 
     main {

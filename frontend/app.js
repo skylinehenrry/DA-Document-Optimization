@@ -1,7 +1,7 @@
 /*
 Application controller for DA Document Generator.
 
-- Load the durable workflow library and resume the selected draft after reload.
+- Scope activity, form recovery and the selected draft to one launcher session.
 - Submit analysis, edits, imports and generation as persistent background jobs.
 - Keep the exact request ID before submission, so a lost response cannot start
   duplicate analysis or duplicate paid model requests when connectivity returns.
@@ -14,7 +14,7 @@ Application controller for DA Document Generator.
 import {APIError, PendingRequest, RecoveryStorage, artifactURL, downloadFilename, request} from "./api.js";
 import {EDGE_KINDS, NODE_KINDS, GraphSession, newId, validateConnection} from "./graph-state.js";
 import {GraphEditor} from "./graph-editor.js";
-import {basename, connectionGroups, nodeName} from "./graph-presentation.js";
+import {connectionGroups, nodeName} from "./graph-presentation.js";
 
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
@@ -22,19 +22,25 @@ const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const readable = value => String(value ?? "").replaceAll("_", " ");
 const jobNames = {analyze: "Project analysis", edit: "Save diagram changes", import: "Import corrected diagram", generate: "Flowchart generation", suggest: "AI connection suggestions"};
 const activeStates = new Set(["queued", "running"]);
-const storage = new RecoveryStorage();
+const sessionURL = new URL(location.href);
+let sessionId = sessionURL.searchParams.get("session");
+if (!sessionId || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(sessionId)) {
+  sessionId = crypto.randomUUID();
+  sessionURL.searchParams.set("session", sessionId);
+  history.replaceState(null, "", sessionURL);
+}
+const storage = new RecoveryStorage(undefined, `da-workflow.v3.${sessionId}.`);
 const pending = new PendingRequest(storage);
 const storedPreferences = storage.read("preferences", {});
 const preferences = storedPreferences && typeof storedPreferences === "object" && !Array.isArray(storedPreferences) ? storedPreferences : {};
-const storedLibrary = storage.read("library", []);
 const formFields = ["workflowName", "scriptFolder", "documentFolder", "workingDirectory", "sqlDialect", "databaseNamespace"];
 const optionFields = ["model", "language", "maxConcurrency", "timeoutSeconds"];
 const state = {
   online: false, health: null, step: ["analyze", "review", "generate"].includes(preferences.step) ? preferences.step : "analyze", tab: "diagram",
-  drafts: Array.isArray(storedLibrary) ? storedLibrary.filter(row => row && typeof row === "object" && draftId(row)) : [], jobs: [], selected: null, session: null,
+  jobs: [], selected: null, session: null,
   selectedId: preferences.selectedId ?? null, watchJobId: preferences.watchJobId ?? null,
   handled: new Set(Array.isArray(preferences.handled) ? preferences.handled : []), selection: null, polling: false,
-  lastLibrary: 0, loadToken: 0, storageUnsafe: false, expandedGroups: new Set(),
+  loadToken: 0, storageUnsafe: false, expandedGroups: new Set(),
   editorAction: null, stopping: false, optionsForDraft: null,
 };
 
@@ -52,7 +58,7 @@ Apply the user's accent theme without touching workflow data.
   temporary; a cosmetic preference must never block analysis or saving.
 */
 function applyAppearance(value, {persist = false} = {}) {
-  const themes = {blue: "Blue", violet: "Violet", graphite: "Graphite"};
+  const themes = {blue: "Blue", violet: "Violet", pink: "Pink"};
   const theme = typeof value === "string" && Object.hasOwn(themes, value) ? value : "blue";
   document.documentElement.dataset.theme = theme;
   document.querySelectorAll('input[name="accentTheme"]').forEach(input => {
@@ -65,24 +71,11 @@ function applyAppearance(value, {persist = false} = {}) {
   }
 }
 
-/*
-Keep the saved-workflow drawer's visible and accessible states together.
-- The drawer is navigation rather than a modal; normal page controls still work.
-- CSS hides closed navigation from sight and keyboard focus on every screen size.
-- Closing with Escape or the close button returns focus to the menu button.
-*/
-function setLibraryOpen(open, {returnFocus = false} = {}) {
-  $("librarySidebar").classList.toggle("is-open", open);
-  $("toggleLibrary").setAttribute("aria-expanded", String(open));
-  if (returnFocus) $("toggleLibrary").focus();
-}
-
 function dateText(value) {
   if (!value) return "";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString(undefined, {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"});
 }
-function draftId(row) { return row?.draft_id ?? row?.id; }
 function currentJob() {
   return state.jobs.find(job => job.id === state.watchJobId) ?? state.jobs.find(job => activeStates.has(job.state) && job.draft_id === state.selectedId);
 }
@@ -224,25 +217,19 @@ function setReviewTab(tab) {
   if (tab === "findings") renderFindings();
   if (tab === "sources") renderSources();
 }
-function renderLibrary() {
-  const query = $("librarySearch").value.toLowerCase();
-  const drafts = state.drafts.filter(row => `${row.title ?? ""} ${row.project_root ?? ""}`.toLowerCase().includes(query));
-  $("draftList").innerHTML = drafts.length ? drafts.map(row => `<button type="button" class="draft-item ${draftId(row) === state.selectedId ? "is-selected" : ""}" data-draft="${esc(draftId(row))}" ${draftId(row) === state.selectedId ? 'aria-current="true"' : ""} title="${esc(row.project_root)}"><span class="draft-item-title">${icon("flow")}<span>${esc(row.title || basename(row.project_root) || "Untitled workflow")}</span></span><span class="draft-item-meta">r${Number(row.revision) || 1} · ${row.status === "generated" ? "Generated" : "Draft"} · ${Number(row.source_count) || 0} files</span></button>`).join("") : `<p class="library-empty">${query ? "No workflows match this search." : "Your saved workflows will appear here. Start with New analysis."}</p>`;
-}
-
 function loadOptions(result) {
   if (state.optionsForDraft === result.draft_id) return;
   state.optionsForDraft = result.draft_id;
   const saved = preferences.options?.[result.draft_id] ?? {};
   const previous = result.generation?.settings ?? {};
   const settings = {...(result.settings ?? {}), ...previous, ...saved};
-  $("model").value = settings.model ?? "OpenAI";
+  $("model").value = ["OpenAI", "AzureOpenAI", "Ollama"].includes(settings.model) ? settings.model : "AzureOpenAI";
   $("language").value = settings.language === "Japanese" ? "Japanese" : "English";
   $("maxConcurrency").value = settings.max_concurrency ?? (settings.model === "Ollama" ? 1 : 3);
   $("timeoutSeconds").value = settings.timeout_seconds ?? 90;
-  // - Reopening a historical AI generation does not opt the user into a new
-  //   provider call. Only a saved browser choice restores the checked option.
-  $("useLlmSummaries").checked = saved.use_llm ?? false;
+  // - New sessions use model summaries by default. The provider is still called
+  //   only when the user submits generation from a reviewed revision.
+  $("useLlmSummaries").checked = saved.use_llm ?? true;
   $("allowProposedEdges").checked = false;
   $("acknowledgeIncomplete").checked = false;
 }
@@ -288,7 +275,6 @@ function takeDraft(result, {fit = false, step = null, completedRequest = null} =
   renderReview();
   editor.setGraph(state.session.graph, {fit: fit || !same});
   renderInspector();
-  renderLibrary();
   setStep(step ?? (state.step === "analyze" ? "review" : state.step));
   if (result.export_warning) showMessage(result.export_warning, "warning");
 }
@@ -298,20 +284,18 @@ async function loadDraft(id, {step = "review", quiet = false} = {}) {
   if (token !== state.loadToken) return;
   takeDraft(result, {fit: id !== state.selectedId, step});
   if (!quiet) $("appMessage").hidden = true;
-  setLibraryOpen(false);
 }
 function newAnalysis() {
   persistEdits();
   ++state.loadToken;
   state.selected = null; state.session = null; state.selectedId = null; state.selection = null;
   state.optionsForDraft = null;
-  $("projectTitle").textContent = "Create a workflow.";
-  $("projectSubtitle").textContent = "Understand your project. Refine the connections. Share the result.";
+  $("projectTitle").textContent = "Project analysis";
+  $("projectSubtitle").textContent = "Select the source and output folders to begin.";
   $("breadcrumbTitle").textContent = "New analysis";
   $("revisionPill").hidden = true;
   $("appMessage").hidden = true;
-  setStep("analyze"); renderLibrary(); renderControls();
-  setLibraryOpen(false);
+  setStep("analyze"); renderControls();
   $("workflowName").focus();
 }
 
@@ -367,6 +351,20 @@ function renderControls() {
   const proposals = session?.graph.edges.filter(edge => edge.status === "proposed").length ?? 0;
   const needsAcceptance = Boolean(state.selected?.review?.has_analysis_errors);
   $("generateButton").disabled = locked || dirty || !state.online || !session?.graph.nodes.length || (proposals > 0 && !$("allowProposedEdges").checked) || (needsAcceptance && !$("acknowledgeIncomplete").checked);
+  // - Match each primary action to the durable job that owns it.
+  // - Replace the normal icon with an animated spinner while that job is active.
+  // - Keep the backend state as the authority; animation never implies completion.
+  const activeKind = kind => state.jobs.some(job => job.kind === kind && activeStates.has(job.state));
+  const setBusyLabel = (id, active, activeLabel, idleLabel, iconName) => {
+    const button = $(id);
+    button.classList.toggle("is-loading", active);
+    button.innerHTML = active
+      ? `<span class="spinner" aria-hidden="true"></span>${activeLabel}`
+      : `${idleLabel}${icon(iconName)}`;
+  };
+  setBusyLabel("analyzeButton", activeKind("analyze"), "Running analysis…", "Analyze project", "arrow");
+  setBusyLabel("saveChangesButton", activeKind("edit"), "Saving changes…", "Save changes", "check");
+  setBusyLabel("generateButton", activeKind("generate"), "Generating flowchart…", "Generate flowchart", "sparkles");
   const anyActive = state.jobs.some(job => activeStates.has(job.state));
   $("stopServerButton").disabled = !state.online || !state.health?.shutdown_available || anyActive || Boolean(pending.value) || state.stopping;
   document.querySelectorAll("[data-retry-job]").forEach(button => { button.disabled = !state.online || Boolean(pending.value); });
@@ -477,7 +475,7 @@ function openEditorDialog(action, sourceId = "") {
   $("editorDialogSubmit").textContent = action === "suggest" ? "Request suggestions" : title;
   if (action === "node") $("editorDialogFields").innerHTML = `<label class="field"><span>Node name</span><input name="label" required maxlength="1000" placeholder="For example, Review output"></label><label class="field"><span>Node type</span><select name="kind">${NODE_KINDS.map(kind => `<option value="${kind}">${esc(readable(kind))}</option>`).join("")}</select><small>A manual node does not impersonate a source script or inherit its summaries.</small></label>`;
   else if (action === "edge") $("editorDialogFields").innerHTML = `<label class="field"><span>From · source</span><select name="source">${nodeOptions(sourceId)}</select></label><label class="field"><span>To · destination</span><select name="target">${nodeOptions(state.session.graph.nodes.find(node => node.id !== sourceId)?.id)}</select></label><label class="field"><span>Connection type</span><select name="kind">${kindOptions("depends_on")}</select><small>Reads: resource → reader. Writes: writer → resource.</small></label><label class="field"><span>Review note · optional</span><textarea name="review_note"></textarea></label>`;
-  else $("editorDialogFields").innerHTML = `<p class="muted">This sends saved source snapshots to the selected provider. Suggested connections remain unconfirmed until you review them. Existing corrections are retained.</p><label class="field"><span>Provider</span><select name="model"><option value="OpenAI" ${$("model").value === "OpenAI" ? "selected" : ""}>OpenAI / configured Azure</option><option value="Ollama" ${$("model").value === "Ollama" ? "selected" : ""}>Ollama · local model</option></select></label><div class="two-columns"><label class="field"><span>Concurrent requests</span><input name="max_concurrency" type="number" min="1" max="16" value="${Number($("maxConcurrency").value)}" required></label><label class="field"><span>Timeout (seconds)</span><input name="timeout_seconds" type="number" min="1" max="300" value="${Number($("timeoutSeconds").value)}" required></label></div><label class="checkbox-line"><input type="checkbox" name="consent" required><span>I agree to send the saved source text to this provider.</span></label>`;
+  else $("editorDialogFields").innerHTML = `<p class="muted">This sends saved source snapshots to the selected provider. Suggested connections remain unconfirmed until you review them. Existing corrections are retained.</p><label class="field"><span>Provider</span><select name="model"><option value="OpenAI" ${$("model").value === "OpenAI" ? "selected" : ""}>OpenAI</option><option value="AzureOpenAI" ${$("model").value === "AzureOpenAI" ? "selected" : ""}>Azure OpenAI</option><option value="Ollama" ${$("model").value === "Ollama" ? "selected" : ""}>Ollama · local model</option></select></label><div class="two-columns"><label class="field"><span>Concurrent requests</span><input name="max_concurrency" type="number" min="1" max="16" value="${Number($("maxConcurrency").value)}" required></label><label class="field"><span>Timeout (seconds)</span><input name="timeout_seconds" type="number" min="1" max="300" value="${Number($("timeoutSeconds").value)}" required></label></div><label class="checkbox-line"><input type="checkbox" name="consent" required><span>I agree to send the saved source text to this provider.</span></label>`;
   if (action === "group") $("editorDialogFields").innerHTML = `<p class="muted">Reconnect all ${group.member_ids.length} relationships in this arrow. Individual connection types stay unchanged. Evidence for the old endpoints remains in saved revision history.</p><label class="field"><span>From · source</span><select name="source">${nodeOptions(group.source)}</select></label><label class="field"><span>To · destination</span><select name="target">${nodeOptions(group.target)}</select></label><label class="field"><span>Review note · optional</span><textarea name="review_note"></textarea></label>`;
   $("editorDialog").showModal();
 }
@@ -522,7 +520,8 @@ function renderSources() {
 function modelOptions() {
   const concurrency = Number($("maxConcurrency").value);
   const timeout = Number($("timeoutSeconds").value);
-  return {model: $("model").value === "Ollama" ? "Ollama" : "OpenAI", language: $("language").value || "English", max_concurrency: Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 16 ? concurrency : 1, timeout_seconds: Number.isFinite(timeout) && timeout > 0 && timeout <= 300 ? timeout : 90};
+  const model = ["OpenAI", "AzureOpenAI", "Ollama"].includes($("model").value) ? $("model").value : "AzureOpenAI";
+  return {model, language: $("language").value || "English", max_concurrency: Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 16 ? concurrency : 1, timeout_seconds: Number.isFinite(timeout) && timeout > 0 && timeout <= 300 ? timeout : 90};
 }
 function saveOptions() {
   if (!state.selectedId) return;
@@ -555,7 +554,7 @@ function renderGeneration() {
   const local = Number(counts.deterministic ?? 0);
   const success = Number(counts.complete ?? counts.completed ?? counts.generated ?? counts.success ?? 0);
   const mode = fallback ? `${fallback} AI fallback${fallback === 1 ? "" : "s"}` : generation?.settings?.use_llm ? "AI enhanced" : "Local descriptions";
-  $("generationResult").innerHTML = `<p class="eyebrow">${generation && flowchart ? "READY TO SHARE" : "YOUR FINISHED FLOWCHART"}</p><div class="result-illustration"><div class="result-document">${icon("flow")}<span>HTML</span></div>${generation && flowchart ? `<span class="result-ready-badge">${icon("check")}</span>` : ""}</div><h2>${generation && flowchart ? "Your workflow, connected." : "Clarity, with the details built in."}</h2><p>${generation && flowchart ? `Generated from revision ${generation.revision}. Open the interactive chart or download its standalone HTML file.` : "The finished chart adds expandable script summaries, evidence and navigation to the connections you reviewed."}</p>${generation && flowchart ? `<div class="result-actions"><a class="button button-primary" id="openFlowchartLink" href="${esc(flowchart)}" target="_blank" rel="noopener noreferrer">${icon("external")}Open flowchart</a><button type="button" class="button" data-download="flowchart_download">${icon("download")}Download HTML</button></div><div class="result-meta"><span>Generated<strong>${esc(dateText(generation.created_at))}</strong></span><span>Summaries<strong>${esc(mode)}</strong></span></div>${fallback ? `<div class="notice notice-warning"><div><strong>${fallback} script summaries used fallback text</strong><p>The model did not return a usable result for those scripts. Your reviewed connections were preserved. Download summary details for individual reasons.</p></div></div>` : local && generation.settings?.use_llm ? `<p class="quiet-note">${local} local descriptions${success ? `; ${success} model summaries` : ""}.</p>` : ""}<div class="result-minor-links"><button type="button" data-download="summaries">Summary details (JSON)</button><button type="button" data-download="flowchart_spec">Reviewed graph (JSON)</button><button type="button" data-download="review">Analysis review (JSON)</button></div>` : `<div class="result-meta"><span>Format<strong>Interactive HTML</strong></span><span>Connections<strong>Kept as reviewed</strong></span></div>`}`;
+  $("generationResult").innerHTML = `<p class="eyebrow">FLOWCHART OUTPUT</p><div class="result-illustration"><div class="result-document">${icon("flow")}<span>HTML</span></div>${generation && flowchart ? `<span class="result-ready-badge">${icon("check")}</span>` : ""}</div><h2>${generation && flowchart ? "Flowchart generated" : "Generation output"}</h2><p>${generation && flowchart ? `Generated from revision ${generation.revision}. The standalone HTML includes the reviewed graph, script summaries and project summary.` : "Generate one standalone interactive HTML file from the saved revision."}</p>${generation && flowchart ? `<div class="result-actions"><a class="button button-primary" id="openFlowchartLink" href="${esc(flowchart)}" target="_blank" rel="noopener noreferrer">${icon("external")}Open flowchart</a><button type="button" class="button" data-download="flowchart_download">${icon("download")}Download HTML</button></div><div class="result-meta"><span>Generated<strong>${esc(dateText(generation.created_at))}</strong></span><span>Summaries<strong>${esc(mode)}</strong></span></div>${fallback ? `<div class="notice notice-warning"><div><strong>${fallback} script summaries used fallback text</strong><p>The model did not return a usable result for those scripts. The reviewed connections were preserved.</p></div></div>` : local && generation.settings?.use_llm ? `<p class="quiet-note">${local} local descriptions${success ? `; ${success} model summaries` : ""}.</p>` : ""}` : `<div class="result-meta"><span>Format<strong>Interactive HTML</strong></span><span>Connections<strong>Saved revision</strong></span></div>`}`;
   renderControls();
 }
 
@@ -594,7 +593,7 @@ async function submitJob(kind, payload, id = state.selectedId) {
   if (!state.online) throw new Error("Reconnect to the local server before starting a new operation. Your edits are kept in this browser.");
   if (kind !== "analyze" && busyDraft()) throw new Error("Wait for this draft's active operation to finish.");
   const requestId = crypto.randomUUID();
-  const body = {kind, payload, request_id: requestId, ...(kind === "analyze" ? {} : {draft_id: id})};
+  const body = {kind, payload, request_id: requestId, session_id: sessionId, ...(kind === "analyze" ? {} : {draft_id: id})};
   // - A failed browser write prevents submission, because replaying an unknown
   //   mutation without its original idempotency key would not be safe.
   pending.prepare("/api/jobs", body);
@@ -643,7 +642,6 @@ async function handleWatchedJob() {
       else if (storage.read(`edits.${id}`)?.submitted_request_id === job.request_id) storage.remove(`edits.${id}`);
     }
     showMessage(`${jobNames[job.kind] ?? "Operation"} completed and saved.`);
-    state.lastLibrary = 0;
   } else {
     showMessage(job.error?.message ?? (job.state === "interrupted" ? "This operation was interrupted when the server stopped. Review its status and choose Retry when ready." : "The operation did not finish. Your previously saved draft remains available."), "warning");
     if (job.error?.code === "revision_conflict" && job.draft_id === state.selectedId) {
@@ -731,29 +729,19 @@ async function synchronize(force = false) {
     $("connectionStatus").innerHTML = "<i></i>Local server connected";
     $("connectionBanner").hidden = true;
     $("serverDetails").textContent = `${health.managed ? "Launcher-managed" : "Manually started"} server · ${health.worker_state ?? "connected"}. ${health.project_root ?? ""}`;
-    if (restarted) { state.lastLibrary = 0; showMessage("The server is back. Saved jobs and revisions have been reloaded; interrupted work will not restart automatically."); }
+    if (restarted) showMessage("The server is back. This session has reconnected; interrupted work will not restart automatically.");
     await recoverPending();
-    const fetchLibrary = force || Date.now() - state.lastLibrary > 15000;
-    // - Poll compact job metadata; full graphs are fetched only for a selected
-    //   or changed revision, keeping large project polling inexpensive.
-    const results = await Promise.allSettled([request("/api/jobs?summary=true"), ...(fetchLibrary ? [request("/api/drafts")] : [])]);
-    if (results[0].status === "fulfilled") {
-      state.jobs = results[0].value.map(job => {
+    // - Poll only jobs created by this launcher session. Previous sessions remain
+    //   private backend recovery data and never repopulate the activity interface.
+    const jobs = await request(`/api/jobs?summary=true&session_id=${encodeURIComponent(sessionId)}`);
+    state.jobs = jobs.map(job => {
         const existing = state.jobs.find(item => item.id === job.id);
         return existing?.result_complete && existing.updated_at === job.updated_at ? existing : job;
       });
-      await handleWatchedJob();
-    } else throw results[0].reason;
-    if (fetchLibrary) {
-      if (results[1].status === "rejected") throw results[1].reason;
-      state.drafts = results[1].value;
-      state.lastLibrary = Date.now();
-      safeWrite("library", state.drafts);
-      renderLibrary();
-      const row = state.drafts.find(item => draftId(item) === state.selectedId);
-      if (row && (!state.selected || row.revision !== state.session?.base.revision || (row.generation_id ?? null) !== (state.selected.generation?.generation_id ?? null))) {
-        await loadDraft(state.selectedId, {step: state.step === "analyze" ? "review" : state.step, quiet: true});
-      }
+    await handleWatchedJob();
+    if (state.selectedId && !state.selected) {
+      const belongsToSession = state.jobs.some(job => (job.draft_id ?? job.result?.draft_id) === state.selectedId);
+      if (belongsToSession) await loadDraft(state.selectedId, {step: state.step === "analyze" ? "review" : state.step, quiet: true});
     }
     renderActivity(); renderTaskNotice(); renderControls();
   } catch (error) {
@@ -761,8 +749,8 @@ async function synchronize(force = false) {
     $("connectionStatus").dataset.state = "offline";
     $("connectionStatus").innerHTML = "<i></i>Connection paused";
     $("connectionBanner").hidden = false;
-    $("connectionMessage").textContent = error.status && error.status < 500 ? `The server rejected a status request: ${error.message}` : `${error instanceof APIError ? "Reopen the launcher if the local server was stopped." : error.message} Saved drafts and browser edits are retained. A lost connection does not mean your job failed.`;
-    $("serverDetails").textContent = "Disconnected. Reopen the launcher to reconnect to saved workflows.";
+    $("connectionMessage").textContent = error.status && error.status < 500 ? `The server rejected a status request: ${error.message}` : `${error instanceof APIError ? "Reopen the launcher if the local server was stopped." : error.message} Current browser edits remain recoverable in this session.`;
+    $("serverDetails").textContent = "Disconnected. Reopen the launcher to start a new session.";
     renderTaskNotice(); renderControls();
   } finally {
     state.polling = false;
@@ -812,9 +800,6 @@ function undo(redo = false) {
 on("undoButton", "click", () => undo());
 on("redoButton", "click", () => undo(true));
 on("newAnalysisButton", "click", newAnalysis);
-on("brandHome", "click", newAnalysis);
-on("librarySearch", "input", renderLibrary);
-on("refreshLibrary", "click", () => synchronize(true));
 on("reconnectButton", "click", () => { state.stopping = false; return synchronize(true); });
 on("goGenerateButton", "click", () => setStep("generate"));
 on("canvasSearch", "input", () => editor.setFilter({query: $("canvasSearch").value}));
@@ -884,19 +869,17 @@ for (const id of [...optionFields, "useLlmSummaries"]) on(id, "change", () => { 
 for (const id of ["allowProposedEdges", "acknowledgeIncomplete"]) on(id, "change", renderControls);
 on("settingsButton", "click", () => { renderControls(); $("settingsDialog").showModal(); });
 on("activityButton", "click", () => { renderActivity(); $("activityDialog").showModal(); });
-on("toggleLibrary", "click", () => setLibraryOpen(!$("librarySidebar").classList.contains("is-open")));
-on("closeLibrary", "click", () => setLibraryOpen(false, {returnFocus: true}));
 on("themeOptions", "change", event => {
   if (event.target.name === "accentTheme") applyAppearance(event.target.value, {persist: true});
 });
 on("stopServerButton", "click", async () => {
-  if (!await confirmAction("Stop the local server?", "Saved drafts will remain on this computer. The app will disconnect until you run its launcher again. Active jobs must finish before the server can be stopped.", "Stop server")) return;
+  if (!await confirmAction("Stop the local server?", "This session will disconnect until you run the launcher again. Active jobs must finish before the server can be stopped.", "Stop server")) return;
   persistEdits();
   await request("/api/shutdown", {method: "POST", body: {instance_id: state.health.instance_id}});
   state.stopping = true; state.online = false;
   $("settingsDialog").close();
   $("connectionBanner").hidden = false;
-  $("connectionMessage").textContent = "The server is stopping. Reopen the launcher, then choose Check connection. Saved drafts remain available.";
+  $("connectionMessage").textContent = "The server is stopping. Reopen the launcher to begin a new session.";
   $("connectionStatus").dataset.state = "offline";
   $("connectionStatus").innerHTML = "<i></i>Server stopped";
   renderControls();
@@ -944,9 +927,6 @@ $("inspector").addEventListener("submit", event => {
   else if (event.target.id === "edgeInspectorForm") updateEdge(state.selection.id, {...values, label: values.label || null, review_note: values.review_note || null});
 });
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape" && $("librarySidebar").classList.contains("is-open") && !document.querySelector("dialog[open]")) {
-    setLibraryOpen(false, {returnFocus: true});
-  }
   const editableInput = event.target.closest("input,textarea,select,[contenteditable=true]");
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !editableInput && !document.querySelector("dialog[open]")) {
     event.preventDefault(); undo(event.shiftKey);
@@ -964,15 +944,14 @@ window.addEventListener("beforeunload", event => {
 window.addEventListener("storage", event => {
   // - A palette change in another tab affects appearance only, never its graph.
   if (event.key === null || event.key === storage.prefix + "appearance.theme") applyAppearance(storage.read("appearance.theme"));
-  if (event.key?.includes(".pending-request.") || event.key?.endsWith("library")) synchronize(true);
+  if (event.key?.includes(".pending-request.")) synchronize(true);
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) synchronize(true); });
 
-// - Populate local state before connecting, so cached drafts and unsaved edits
-//   remain inspectable even when the backend must be restarted first.
+// - Populate only this launcher session before connecting. A different launcher
+//   URL has a different prefix and therefore starts with an empty interface.
 applyAppearance(storage.read("appearance.theme"));
 for (const id of formFields) if (preferences.form?.[id] !== undefined) $(id).value = preferences.form[id];
-renderLibrary();
 const cached = storage.read("last-draft");
 if (cached?.draft_id === state.selectedId && cached.graph) {
   try { takeDraft(cached, {fit: true, step: state.step === "analyze" ? "review" : state.step}); }
