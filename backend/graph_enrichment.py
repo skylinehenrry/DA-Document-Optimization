@@ -25,7 +25,7 @@ MAX_SOURCE_CHARS = 100_000
 MAX_REGISTRY_CHARS = 100_000
 
 
-def create_chain(model: ModelProvider, schema: type[StrictModel]):
+def create_chain(model: ModelProvider, schema: type[StrictModel], authentication_timeout: float = 90):
     """Prepare structured model output without involving graph construction.
 
     - Retains the user's Azure/Ollama connection settings in one small module.
@@ -34,7 +34,7 @@ def create_chain(model: ModelProvider, schema: type[StrictModel]):
     """
     from .model_provider import set_up_LLM
 
-    provider = set_up_LLM(model)
+    provider = set_up_LLM(model, authentication_timeout = authentication_timeout)
     identity = {"provider": model, "class": type(provider).__name__}
     for key in ("model", "model_name", "deployment_name", "azure_endpoint", "base_url", "temperature"):
         value = getattr(provider, key, None)
@@ -105,7 +105,7 @@ async def enrich_summaries(graph: GraphDocument, snapshots: dict[str, str], stor
     initialization_error = None
     if use_llm and chain is None and script_nodes:
         try:
-            chain, provider_identity = await asyncio.to_thread(create_chain, model, NarrativeSummary)
+            chain, provider_identity = await asyncio.to_thread(create_chain, model, NarrativeSummary, timeout_seconds)
         except Exception as error:
             if isinstance(error, ImportError):
                 initialization_error = (
@@ -198,7 +198,7 @@ async def suggest_relationships(graph: GraphDocument, snapshots: dict[str, str],
         raise ValueError("max_concurrency must be between 1 and 16.")
     log = logger or (lambda message: None)
     if chain is None:
-        chain, _ = await asyncio.to_thread(create_chain, model, Suggestions)
+        chain, _ = await asyncio.to_thread(create_chain, model, Suggestions, timeout_seconds)
     registry = [{"id": node.id, "kind": node.kind, "label": node.label, "source_path": node.source_path,
                  "resource_key": node.resource_key} for node in graph.nodes]
     if len(json_text(registry)) > MAX_REGISTRY_CHARS:

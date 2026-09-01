@@ -38,7 +38,7 @@ When editing the interface:
 
 ## Validation — 1 September 2026
 
-- Backend: 169 tests discovered; 168 passed and one native Windows test skipped on macOS.
+- Backend: 171 tests discovered; 170 passed and one native Windows test skipped on macOS.
 - Frontend: all 25 existing state, request and graph-presentation tests passed.
 - Markup: all 128 original IDs retained, no duplicate IDs, 62 valid local icon references and no remote scripts.
 - Browser: analysis, review, generation, the saved-workflow drawer, generated flowchart opening and the attachment download route were exercised using a synthetic project and isolated store. No live model calls or source-program execution.
